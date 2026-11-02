@@ -1,0 +1,329 @@
+name: Release
+
+# Manual, owner-initiated release pipeline. Nothing in this repository publishes on push, merge
+# or tag; a human starts this workflow from the Actions tab, enters the version and chooses how
+# far it may go. The sources on main must already carry the requested version (see
+# prepare-release.yml), so the tag, the GitHub Release and the store package all point at one
+# reviewed commit. See docs/release.md for the full procedure and the one-time store setup.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.0.0 (must already be in manifest.json and package.json on main)'
+        required: true
+        type: string
+      github_release:
+        description: 'Create the git tag and GitHub Release (off = dry run: validate, test and package only; on requires a store action)'
+        required: true
+        type: boolean
+        default: false
+      store:
+        description: 'Chrome Web Store action for the released package (required with github_release; none is only valid for a dry run)'
+        required: true
+        type: choice
+        default: none
+        options:
+          - none
+          - upload-only
+          - submit-for-review
+          - submit-staged
+      allow_non_monotonic:
+        description: 'Allow a version that is not higher than the latest release (requires a reason)'
+        required: false
+        type: boolean
+        default: false
+      reason:
+        description: 'Why a non-monotonic version is justified (recorded in the run summary)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# One release at a time, never cancelled half-way.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24
+
+jobs:
+  validate:
+    name: Validate request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - name: Require the protected main branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases are built from main only (got ${{ github.ref }})."
+          exit 1
+      - name: Require an authorised publisher
+        env:
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+          ALLOWED: ${{ vars.RELEASE_PUBLISHERS }}
+        run: |
+          if [ "$ACTOR" = "$OWNER" ]; then exit 0; fi
+          case ",${ALLOWED// /}," in
+            *",$ACTOR,"*) exit 0 ;;
+          esac
+          echo "::error::$ACTOR is not allowed to run releases. Only the repository owner or logins listed in the RELEASE_PUBLISHERS variable may."
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      # A real release must always schedule the store step (upload-only, submit-for-review or
+      # submit-staged); only the dry run (github_release off, store none) skips it. The rules live
+      # in scripts/release/lib/inputs.mjs and are unit-tested.
+      - name: Check input combinations
+        env:
+          STORE: ${{ inputs.store }}
+          GH_RELEASE: ${{ inputs.github_release }}
+          NON_MONOTONIC: ${{ inputs.allow_non_monotonic }}
+          REASON: ${{ inputs.reason }}
+        run: node scripts/release/check-inputs.mjs --github-release "$GH_RELEASE" --store "$STORE" --allow-non-monotonic "$NON_MONOTONIC" --reason "$REASON"
+      - name: Collect existing tags and the latest release
+        id: history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "tags=$(git tag --list 'v*' | tr '\n' ',')" >> "$GITHUB_OUTPUT"
+          latest=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+      # Inputs reach the shell through environment variables, never through expression
+      # interpolation, so a crafted value cannot become shell syntax.
+      - name: Validate the version
+        id: check
+        env:
+          VERSION: ${{ inputs.version }}
+          LATEST: ${{ steps.history.outputs.latest }}
+          TAGS: ${{ steps.history.outputs.tags }}
+          NON_MONOTONIC: ${{ inputs.allow_non_monotonic }}
+        run: |
+          extra=""
+          if [ "$NON_MONOTONIC" = "true" ]; then extra="--allow-non-monotonic"; fi
+          node scripts/release/check-version.mjs --version "$VERSION" --latest "$LATEST" --existing-tags "$TAGS" $extra
+
+  build:
+    name: Quality gates and package
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      zip_name: ${{ steps.package.outputs.zip_name }}
+      sha256: ${{ steps.package.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run test:component
+      - run: npm run build
+      - run: node scripts/verify-manifest.mjs dist/manifest.json --expect-version "$VERSION"
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+      - name: Package and verify the ZIP
+        id: package
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: node scripts/release/package.mjs --version "$VERSION" --dist dist --out release
+      - name: Summarise
+        run: |
+          {
+            echo "### Package"
+            echo
+            echo "- File: \`${{ steps.package.outputs.zip_name }}\`"
+            echo "- SHA-256: \`${{ steps.package.outputs.sha256 }}\`"
+            echo "- Commit: \`${{ github.sha }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      # dist is reused by the E2E job and the ZIP by the publishing jobs: one build, one artifact.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: TokenLens-v${{ needs.validate.outputs.version }}
+          path: release
+          retention-days: 90
+          if-no-files-found: error
+
+  e2e:
+    name: Playwright against the packaged build
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Same pinned image as CI so the Linux screenshot baselines apply (see ci.yml).
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: TokenLens-v${{ needs.validate.outputs.version }}
+          path: release
+      # The build under test must be the build inside the release ZIP, file for file, and the ZIP
+      # must carry the checksum the packaging step recorded for the publishing jobs.
+      - name: Verify the tested build is the packaged build
+        env:
+          ZIP_NAME: ${{ needs.build.outputs.zip_name }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: node scripts/release/verify-package.mjs --zip "release/$ZIP_NAME" --version "$VERSION" --sha256 "$SHA256" --checksum "release/$ZIP_NAME.sha256" --dist dist
+      - run: npm ci
+      - run: xvfb-run --auto-servernum -- npm run test:e2e
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 14
+          if-no-files-found: ignore
+
+  github-release:
+    name: Tag and GitHub Release
+    if: inputs.github_release
+    needs: [validate, build, e2e]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Configure a protected "release" environment with required reviewers to add a manual
+    # approval step before anything becomes public (docs/release.md).
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: TokenLens-v${{ needs.validate.outputs.version }}
+          path: release
+      - name: Verify the artifact is the tested package
+        working-directory: release
+        run: |
+          sha256sum -c "${{ needs.build.outputs.zip_name }}.sha256"
+          test "$(sha256sum "${{ needs.build.outputs.zip_name }}" | cut -d' ' -f1)" = "${{ needs.build.outputs.sha256 }}"
+      - name: Write release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "TokenLens ${{ needs.validate.outputs.version }} — Chrome DevTools extension for inspecting JWT and Bearer tokens."
+            echo
+            echo "## Install"
+            echo
+            echo "Download \`${{ needs.build.outputs.zip_name }}\`, unzip it, open \`chrome://extensions\`, enable Developer mode and choose **Load unpacked** on the unzipped folder. Chrome Web Store availability is announced separately once a submission is approved."
+            echo
+            echo "## Provenance"
+            echo
+            echo "- Source commit: ${{ github.sha }}"
+            echo "- Built and tested by: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- SHA-256: \`${{ needs.build.outputs.sha256 }}\`"
+            echo
+            echo "## Changes"
+            echo
+            gh api "repos/${{ github.repository }}/releases/generate-notes" -f tag_name="${{ needs.validate.outputs.tag }}" -f target_commitish="${{ github.sha }}" --jq .body || echo "_No generated notes available._"
+          } > release/NOTES.md
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ needs.validate.outputs.tag }}"
+          "release/${{ needs.build.outputs.zip_name }}"
+          "release/${{ needs.build.outputs.zip_name }}.sha256"
+          release/provenance.json
+          --target "${{ github.sha }}"
+          --title "TokenLens ${{ needs.validate.outputs.version }}"
+          --notes-file release/NOTES.md
+      - run: echo "Released ${{ needs.validate.outputs.tag }} from ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+
+  chrome-web-store:
+    name: Chrome Web Store
+    if: inputs.store != 'none'
+    needs: [validate, build, github-release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Protected environment: holds the store identifiers and (optionally) required reviewers.
+    environment: chrome-web-store
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Require store configuration
+        env:
+          PUBLISHER: ${{ vars.CWS_PUBLISHER_ID }}
+          ITEM: ${{ vars.CWS_EXTENSION_ID }}
+          PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          ACCOUNT: ${{ vars.CWS_SERVICE_ACCOUNT }}
+        run: |
+          missing=""
+          [ -n "$PUBLISHER" ] || missing="$missing CWS_PUBLISHER_ID"
+          [ -n "$ITEM" ] || missing="$missing CWS_EXTENSION_ID"
+          [ -n "$PROVIDER" ] || missing="$missing GCP_WORKLOAD_IDENTITY_PROVIDER"
+          [ -n "$ACCOUNT" ] || missing="$missing CWS_SERVICE_ACCOUNT"
+          if [ -n "$missing" ]; then
+            echo "::error::Chrome Web Store publishing is not configured. Missing environment variables:$missing. See docs/release.md."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: TokenLens-v${{ needs.validate.outputs.version }}
+          path: release
+      - name: Verify the artifact is the released package
+        working-directory: release
+        run: test "$(sha256sum "${{ needs.build.outputs.zip_name }}" | cut -d' ' -f1)" = "${{ needs.build.outputs.sha256 }}"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Short-lived token through Workload Identity Federation: no service-account key is stored anywhere.
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        id: auth
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.CWS_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+          access_token_lifetime: 1200s
+          create_credentials_file: false
+      # If this step fails after the GitHub Release exists, resume with the "Retry Chrome Web
+      # Store" workflow (retry-store.yml); re-running this workflow is refused because the tag exists.
+      - name: Upload and submit
+        id: store
+        env:
+          CWS_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          PUBLISHER: ${{ vars.CWS_PUBLISHER_ID }}
+          ITEM: ${{ vars.CWS_EXTENSION_ID }}
+          ZIP_NAME: ${{ needs.build.outputs.zip_name }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          STORE: ${{ inputs.store }}
+        run: >
+          node scripts/release/cws-publish.mjs
+          --publisher "$PUBLISHER"
+          --item "$ITEM"
+          --zip "release/$ZIP_NAME"
+          --expect-version "$VERSION"
+          --action "$STORE"

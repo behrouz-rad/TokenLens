@@ -1,0 +1,77 @@
+name: CI
+
+# Quality gate only. Nothing here publishes anything: releases are started by hand from the
+# "Release" workflow (release.yml).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck, lint, unit and component tests, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run test:component
+      - run: npm run build
+      - run: node scripts/verify-manifest.mjs dist/manifest.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: extension-dist
+          path: dist
+          retention-days: 14
+
+  e2e:
+    name: Playwright (panel UI + installed extension)
+    runs-on: ubuntu-24.04
+    needs: quality
+    timeout-minutes: 30
+    # The pinned Playwright image provides the exact Chromium build, OS and fonts that the Linux
+    # screenshot baselines were generated with (`npm run test:e2e:baselines`). The tag must match
+    # the @playwright/test version in package-lock.json; test/unit/toolchain.test.ts enforces it.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: npm ci
+      - run: npm run build
+      # Chromium's new headless mode supports extensions; xvfb keeps a display available for any
+      # windowed fallback inside the container.
+      - run: xvfb-run --auto-servernum -- npm run test:e2e
+        env:
+          CI: 'true'
+      # The report and test-results contain only synthetic fixture data: traces, screenshots and the
+      # expected/actual/diff images of any failed visual comparison.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # The real-DevTools project (e2e/tests/devtools) drives Chrome's native DevTools window over CDP.
+  # It needs a headed, extension-capable Chromium and a desktop session, so it is a manual
+  # pre-release gate: run `npm run test:e2e:devtools` locally and attach the artifacts to the release.

@@ -1,0 +1,224 @@
+import type { MessagePort, CaptureMessage } from './channel';
+import { harEntryKey, harEntryToObservation, type CaptureObservation, type HarEntryLike } from './observation';
+
+export interface DevtoolsNetworkApi {
+  addRequestListener(listener: (entry: HarEntryLike) => void): void;
+  removeRequestListener(listener: (entry: HarEntryLike) => void): void;
+  addNavigationListener(listener: (url: string) => void): void;
+  removeNavigationListener(listener: (url: string) => void): void;
+  getHar(): Promise<{ entries: HarEntryLike[] }>;
+}
+
+export interface RelayOptions {
+  relayId: string;
+  scope: string;
+  port: MessagePort;
+  api: DevtoolsNetworkApi;
+  now?: () => number;
+  /** Replay buffer size; bounds memory held by the DevTools page while no panel is open. */
+  bufferSize?: number;
+  /** Live observations are coalesced into one message per interval to keep the panel responsive during bursts. */
+  flushIntervalMs?: number;
+  /** Interval for the getHAR() reconciliation poll; see class comment. 0 disables polling. */
+  harPollIntervalMs?: number;
+  /** Poll less often once the HAR log is this large, because getHAR() serialises the whole log. */
+  harPollSlowThreshold?: number;
+  harPollSlowIntervalMs?: number;
+  /** Bounded memory of request keys already emitted; protects against duplicate delivery between live events and polls. */
+  seenKeyLimit?: number;
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
+}
+
+/**
+ * Runs in the DevTools page, which exists for the whole life of a DevTools window, so capture
+ * starts the moment DevTools opens rather than when the TokenLens tab is first shown. The panel
+ * can mount, unmount, or reload as often as it likes and resynchronise from the replay buffer.
+ *
+ * Two browser limitations shape this class:
+ *  - chrome.devtools.network only knows about traffic recorded after DevTools opened. Nothing
+ *    earlier can be reconstructed.
+ *  - In practice `onRequestFinished` is not delivered for every request DevTools records (observed
+ *    in Chromium 156: requests made before the first navigation after DevTools opened never fire
+ *    the event, although getHAR() returns them). The relay therefore reconciles against getHAR()
+ *    on a timer and treats the two sources as one stream, de-duplicated by request key.
+ */
+export class CaptureRelay {
+  private readonly buffer: CaptureObservation[] = [];
+  private readonly outbox: CaptureObservation[] = [];
+  private readonly seenKeys = new Set<string>();
+  private readonly seenKeyOrder: string[] = [];
+  private readonly now: () => number;
+  private readonly bufferSize: number;
+  private readonly flushIntervalMs: number;
+  private readonly harPollIntervalMs: number;
+  private readonly harPollSlowThreshold: number;
+  private readonly harPollSlowIntervalMs: number;
+  private readonly seenKeyLimit: number;
+  private readonly setTimer: (fn: () => void, ms: number) => unknown;
+  private readonly clearTimer: (handle: unknown) => void;
+  private seq = 0;
+  private started = false;
+  private polling = false;
+  private flushHandle: unknown = null;
+  private pollHandle: unknown = null;
+  private unsubscribe: (() => void) | null = null;
+  private liveEventCount = 0;
+  private polledEntryCount = 0;
+
+  private readonly onRequestFinished = (entry: HarEntryLike): void => {
+    this.liveEventCount += 1;
+    this.admit(entry);
+  };
+
+  private readonly onNavigated = (url: string): void => {
+    this.enqueue({ kind: 'navigation', relayId: this.options.relayId, seq: ++this.seq, url, at: this.now() });
+    this.schedulePoll(0);
+  };
+
+  constructor(private readonly options: RelayOptions) {
+    this.now = options.now ?? (() => Date.now());
+    this.bufferSize = options.bufferSize ?? 5000;
+    this.flushIntervalMs = options.flushIntervalMs ?? 50;
+    this.harPollIntervalMs = options.harPollIntervalMs ?? 1000;
+    this.harPollSlowThreshold = options.harPollSlowThreshold ?? 2000;
+    this.harPollSlowIntervalMs = options.harPollSlowIntervalMs ?? 5000;
+    this.seenKeyLimit = options.seenKeyLimit ?? 20_000;
+    this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+    this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+  }
+
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    this.options.api.addRequestListener(this.onRequestFinished);
+    this.options.api.addNavigationListener(this.onNavigated);
+    this.unsubscribe = this.options.port.onMessage(this.handleMessage);
+    this.schedulePoll(0);
+  }
+
+  stop(): void {
+    if (!this.started) return;
+    this.started = false;
+    this.options.api.removeRequestListener(this.onRequestFinished);
+    this.options.api.removeNavigationListener(this.onNavigated);
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    if (this.flushHandle !== null) {
+      this.clearTimer(this.flushHandle);
+      this.flushHandle = null;
+    }
+    if (this.pollHandle !== null) {
+      this.clearTimer(this.pollHandle);
+      this.pollHandle = null;
+    }
+    this.flush();
+  }
+
+  get bufferedCount(): number {
+    return this.buffer.length;
+  }
+
+  get stats(): { liveEvents: number; polledEntries: number; emitted: number } {
+    return { liveEvents: this.liveEventCount, polledEntries: this.polledEntryCount, emitted: this.seq };
+  }
+
+  /** Emits the entry unless an identical request key was already emitted (live or polled). */
+  private admit(entry: HarEntryLike): boolean {
+    const key = harEntryKey(entry);
+    if (this.seenKeys.has(key)) return false;
+    this.seenKeys.add(key);
+    this.seenKeyOrder.push(key);
+    if (this.seenKeyOrder.length > this.seenKeyLimit) {
+      const oldest = this.seenKeyOrder.splice(0, this.seenKeyOrder.length - this.seenKeyLimit);
+      for (const k of oldest) this.seenKeys.delete(k);
+    }
+    this.enqueue({ ...harEntryToObservation(entry, this.now()), relayId: this.options.relayId, seq: ++this.seq });
+    return true;
+  }
+
+  private schedulePoll(delayMs: number): void {
+    if (!this.started || this.harPollIntervalMs <= 0) return;
+    if (this.pollHandle !== null) this.clearTimer(this.pollHandle);
+    this.pollHandle = this.setTimer(() => {
+      this.pollHandle = null;
+      void this.poll();
+    }, delayMs);
+  }
+
+  private async poll(): Promise<void> {
+    if (!this.started || this.polling) return;
+    this.polling = true;
+    const entries = await this.options.api
+      .getHar()
+      .then((log) => (Array.isArray(log.entries) ? log.entries : []))
+      .catch((): HarEntryLike[] => []);
+    this.polling = false;
+    if (!this.started) return;
+    for (const entry of entries) {
+      if (this.admit(entry)) this.polledEntryCount += 1;
+    }
+    const slow = entries.length >= this.harPollSlowThreshold;
+    this.schedulePoll(slow ? this.harPollSlowIntervalMs : this.harPollIntervalMs);
+  }
+
+  private enqueue(observation: CaptureObservation): void {
+    this.buffer.push(observation);
+    if (this.buffer.length > this.bufferSize) this.buffer.splice(0, this.buffer.length - this.bufferSize);
+    this.outbox.push(observation);
+    if (this.flushHandle === null) {
+      this.flushHandle = this.setTimer(() => {
+        this.flushHandle = null;
+        this.flush();
+      }, this.flushIntervalMs);
+    }
+  }
+
+  private flush(): void {
+    if (this.outbox.length === 0) return;
+    const observations = this.outbox.splice(0, this.outbox.length);
+    this.options.port.postMessage({
+      type: 'observations',
+      from: 'relay',
+      relayId: this.options.relayId,
+      scope: this.options.scope,
+      observations,
+    });
+  }
+
+  private readonly handleMessage = (message: CaptureMessage): void => {
+    if (message.type === 'clear') {
+      // Keys stay remembered so already-seen requests are not re-emitted; only the replay is dropped.
+      this.buffer.length = 0;
+      this.outbox.length = 0;
+      return;
+    }
+    if (message.type !== 'hello') return;
+    this.flush();
+    this.options.port.postMessage({
+      type: 'snapshot',
+      from: 'relay',
+      relayId: this.options.relayId,
+      scope: this.options.scope,
+      observations: [...this.buffer],
+    });
+    this.schedulePoll(0);
+  };
+}
+
+export function createChromeNetworkApi(network: typeof chrome.devtools.network): DevtoolsNetworkApi {
+  return {
+    addRequestListener: (listener) => network.onRequestFinished.addListener(listener),
+    removeRequestListener: (listener) => network.onRequestFinished.removeListener(listener),
+    addNavigationListener: (listener) => network.onNavigated.addListener(listener),
+    removeNavigationListener: (listener) => network.onNavigated.removeListener(listener),
+    getHar: () =>
+      new Promise((resolve) => {
+        network.getHAR((log) => resolve({ entries: log.entries ?? [] }));
+      }),
+  };
+}
+
+export function createRelayId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}

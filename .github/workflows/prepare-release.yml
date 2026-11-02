@@ -1,0 +1,65 @@
+name: Prepare release
+
+# Opens a reviewable version-bump pull request. Merging it puts the release version on main,
+# which is what the Release workflow requires; nothing is tagged or published here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to prepare, e.g. 1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Open version bump PR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require the protected main branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Prepare releases from main only (got ${{ github.ref }})."
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Validate and apply the version
+        id: bump
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          current=$(node -p "require('./manifest.json').version")
+          node scripts/release/prepare.mjs "$VERSION"
+          node scripts/release/check-version.mjs --version "$VERSION" --latest "$current" --existing-tags "$(git tag --list 'v*' | tr '\n' ',')"
+          echo "branch=release/v$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Commit and open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add manifest.json package.json package-lock.json
+          git commit -m "chore(release): set version to $VERSION"
+          git push --set-upstream origin "$BRANCH"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(release): set version to $VERSION" \
+            --body "$(printf 'Version bump for the %s release.\n\nAfter merging, run the **Release** workflow from the Actions tab with version `%s`.\n\nOpened by the Prepare release workflow (run %s/%s/actions/runs/%s).' "$VERSION" "$VERSION" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"

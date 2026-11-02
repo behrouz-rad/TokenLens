@@ -1,0 +1,80 @@
+import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { buildScenario, feedObservations, openPanel, tokenItems } from '../../support/panel';
+
+async function scan(page: Parameters<typeof openPanel>[0]) {
+  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+  return results.violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.map((n) => n.target.join(' ')).slice(0, 5) }));
+}
+
+test.describe('accessibility', () => {
+  test('empty state has no WCAG A/AA violations', async ({ page }) => {
+    await openPanel(page);
+    expect(await scan(page)).toEqual([]);
+  });
+
+  test('populated overview has no WCAG A/AA violations in dark and light themes', async ({ page }) => {
+    await openPanel(page);
+    await feedObservations(page, buildScenario().observations);
+    await expect(page.getByTestId('token-header-name')).toBeVisible();
+    expect(await scan(page)).toEqual([]);
+    await page.getByRole('button', { name: 'Switch to light theme' }).click();
+    await expect(page.locator('html')).toHaveClass(/light/);
+    expect(await scan(page)).toEqual([]);
+  });
+
+  test('popovers and dialog are accessible', async ({ page }) => {
+    await openPanel(page);
+    await feedObservations(page, buildScenario().observations);
+    await page.getByRole('button', { name: 'Filters', exact: true }).click();
+    await expect(page.getByTestId('filters-popover')).toBeVisible();
+    expect(await scan(page)).toEqual([]);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Maximize payload panel' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    expect(await scan(page)).toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeHidden();
+  });
+
+  test('keyboard users can reach controls, move selection and see focus', async ({ page }) => {
+    await openPanel(page);
+    await feedObservations(page, buildScenario().observations);
+    const listbox = page.getByRole('listbox', { name: 'Captured tokens' });
+    await tokenItems(page).first().click();
+    await listbox.focus();
+    const first = await tokenItems(page).first().getAttribute('data-token-id');
+    await page.keyboard.press('ArrowDown');
+    await expect(tokenItems(page).nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowUp');
+    await expect(tokenItems(page).first()).toHaveAttribute('aria-selected', 'true');
+    expect(await tokenItems(page).first().getAttribute('data-token-id')).toBe(first);
+
+    await page.getByRole('button', { name: 'Filters', exact: true }).focus();
+    const outline = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement;
+      const style = getComputedStyle(el);
+      return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth, matches: el.matches(':focus-visible') };
+    });
+    expect(outline.matches).toBe(true);
+    expect(outline.outlineStyle).not.toBe('none');
+    expect(outline.outlineWidth).not.toBe('0px');
+
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('filters-popover')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('filters-popover')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Filters', exact: true })).toBeFocused();
+  });
+
+  test('every icon-only button has an accessible name', async ({ page }) => {
+    await openPanel(page);
+    await feedObservations(page, buildScenario().observations);
+    const unnamed = await page.evaluate(() =>
+      [...document.querySelectorAll('button')]
+        .filter((b) => !(b.textContent ?? '').trim() && !b.getAttribute('aria-label') && !b.getAttribute('title'))
+        .map((b) => b.outerHTML.slice(0, 120))
+    );
+    expect(unnamed).toEqual([]);
+  });
+});

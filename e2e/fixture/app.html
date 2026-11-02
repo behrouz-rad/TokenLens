@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TokenLens Fixture App</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; margin: 0; padding: 24px; background: #f6f7fb; color: #222; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p { margin: 0 0 16px; color: #555; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+      button { padding: 8px 10px; border: 1px solid #ccd; border-radius: 6px; background: #fff; cursor: pointer; text-align: left; }
+      button:hover { background: #eef; }
+      #log { margin-top: 16px; font: 12px ui-monospace, monospace; white-space: pre-wrap; background: #fff; border: 1px solid #ddd; padding: 8px; min-height: 60px; }
+      .warn { background: #fff5d6; border: 1px solid #e6c866; padding: 8px; border-radius: 6px; margin-bottom: 16px; }
+    </style>
+  </head>
+  <body>
+    <h1>TokenLens fixture application</h1>
+    <p>Every button sends a <code>fetch</code> with a synthetic <code>Authorization: Bearer</code> header to this server.</p>
+    <div class="warn">All tokens on this page are generated locally for testing and cannot authenticate against anything.</div>
+    <div class="grid" id="scenarios"></div>
+    <div id="log" aria-live="polite"></div>
+
+    <script>
+      (function () {
+        const params = new URLSearchParams(location.search);
+        const now = Number(params.get('now')) || Date.now();
+        const seconds = (ms) => Math.floor(ms / 1000);
+        const SIG = 'c3ludGhldGljLXNpZ25hdHVyZS1ub3QtcmVhbA';
+
+        function b64url(text) {
+          const bytes = new TextEncoder().encode(text);
+          let binary = '';
+          for (const b of bytes) binary += String.fromCharCode(b);
+          return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+        function jwt(header, payload, sig = SIG) {
+          return b64url(JSON.stringify(header)) + '.' + b64url(JSON.stringify(payload)) + '.' + sig;
+        }
+
+        const tokens = {
+          active: jwt({ alg: 'RS256', typ: 'at+jwt', kid: 'fixture-key-1' }, {
+            iss: 'https://issuer.fixture.test', sub: 'user-active', aud: 'api://fixture',
+            exp: seconds(now) + 3600, iat: seconds(now) - 60, nbf: seconds(now) - 60,
+            scope: 'read write', jti: 'fixture-jti-1',
+          }),
+          expiring: jwt({ alg: 'HS256', typ: 'JWT' }, { iss: 'https://issuer.fixture.test', sub: 'user-expiring', exp: seconds(now) + 90, iat: seconds(now) - 10 }),
+          expired: jwt({ alg: 'HS256', typ: 'JWT' }, { iss: 'https://issuer.fixture.test', sub: 'user-expired', exp: seconds(now) - 3600, iat: seconds(now) - 7200 }),
+          noexp: jwt({ alg: 'HS256', typ: 'JWT' }, { iss: 'https://issuer.fixture.test', sub: 'service-noexp', iat: seconds(now) - 5 }),
+          unicode: jwt({ alg: 'ES256', typ: 'JWT' }, { sub: 'ünïcødé-user', name: 'Zoë Ångström 🔐', city: '東京', exp: seconds(now) + 3600 }),
+          nested: jwt({ alg: 'RS256', typ: 'JWT' }, { sub: 'nested-user', exp: seconds(now) + 3600, org: { id: 'o-1', roles: ['admin', 'ops'], limits: { daily: 100, burst: { max: 10 } } } }),
+          idtoken: jwt({ alg: 'RS256', typ: 'JWT' }, { iss: 'https://issuer.fixture.test', sub: 'user-active', aud: 'fixture-client', nonce: 'n-fixture', exp: seconds(now) + 3600, iat: seconds(now) }),
+          unsigned: jwt({ alg: 'none' }, { sub: 'anonymous', exp: seconds(now) + 600 }, ''),
+          malformed: 'eyJhbGciOiJSUzI1NiJ9.this-is-not-json.sig',
+          opaque: 'fixture-opaque-' + Math.random().toString(36).slice(2, 10),
+        };
+
+        const scenarios = [
+          ['active-ok', 'Active JWT → 200', 'active', '/api/ok'],
+          ['active-created', 'Active JWT → POST 201', 'active', '/api/created', 'POST'],
+          ['active-forbidden', 'Active JWT → 403', 'active', '/api/forbidden'],
+          ['active-error', 'Active JWT → 500', 'active', '/api/error'],
+          ['expiring-ok', 'Expiring JWT → 200', 'expiring', '/api/ok'],
+          ['expired-unauthorized', 'Expired JWT → 401', 'expired', '/api/unauthorized'],
+          ['noexp-ok', 'JWT without exp → 200', 'noexp', '/api/ok'],
+          ['unicode-ok', 'Unicode claims → 200', 'unicode', '/api/ok'],
+          ['nested-ok', 'Nested claims → 200', 'nested', '/api/ok'],
+          ['idtoken-ok', 'OIDC ID token → 200', 'idtoken', '/api/ok'],
+          ['unsigned-ok', 'alg none → 200', 'unsigned', '/api/ok'],
+          ['malformed-unauthorized', 'Malformed JWT → 401', 'malformed', '/api/unauthorized'],
+          ['opaque-ok', 'Opaque token → 200', 'opaque', '/api/ok'],
+          ['no-auth', 'No Authorization header → 200', null, '/api/ok'],
+          ['basic-auth', 'Basic auth (not Bearer) → 200', 'basic', '/api/ok'],
+        ];
+
+        const log = document.getElementById('log');
+        function note(line) {
+          log.textContent = (line + '\n' + log.textContent).slice(0, 4000);
+        }
+
+        async function run(id) {
+          const scenario = scenarios.find((s) => s[0] === id);
+          if (!scenario) throw new Error('unknown scenario ' + id);
+          const [, , tokenKey, path, method = 'GET'] = scenario;
+          const headers = {};
+          if (tokenKey === 'basic') headers.Authorization = 'Basic ' + btoa('fixture:fixture');
+          else if (tokenKey) headers.Authorization = 'Bearer ' + tokens[tokenKey];
+          const started = performance.now();
+          const response = await fetch(path, { method, headers, cache: 'no-store' });
+          const ms = Math.round(performance.now() - started);
+          note(`${id}: ${method} ${path} → ${response.status} (${ms} ms)`);
+          return response.status;
+        }
+
+        async function runAll() {
+          const results = [];
+          for (const s of scenarios) results.push([s[0], await run(s[0])]);
+          note('all scenarios complete');
+          document.body.dataset.fixtureComplete = 'true';
+          return results;
+        }
+
+        async function burst(count, tokenKey = 'active') {
+          const started = performance.now();
+          const batch = [];
+          for (let i = 0; i < count; i++) {
+            batch.push(fetch(`/api/ok?i=${i}`, { headers: { Authorization: 'Bearer ' + tokens[tokenKey] }, cache: 'no-store' }));
+            if (batch.length >= 25) { await Promise.all(batch.splice(0)); }
+          }
+          await Promise.all(batch);
+          const ms = Math.round(performance.now() - started);
+          note(`burst of ${count} requests with ${tokenKey} token done in ${ms} ms`);
+          return ms;
+        }
+
+        async function manyTokens(count) {
+          const started = performance.now();
+          const batch = [];
+          for (let i = 0; i < count; i++) {
+            const token = jwt({ alg: 'HS256' }, { sub: 'bulk-' + i, exp: seconds(now) + 3600 + i });
+            batch.push(fetch(`/api/ok?t=${i}`, { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store' }));
+            if (batch.length >= 25) { await Promise.all(batch.splice(0)); }
+          }
+          await Promise.all(batch);
+          const ms = Math.round(performance.now() - started);
+          note(`${count} unique tokens sent in ${ms} ms`);
+          return ms;
+        }
+
+        const grid = document.getElementById('scenarios');
+        for (const [id, label] of scenarios) {
+          const button = document.createElement('button');
+          button.textContent = label;
+          button.dataset.scenario = id;
+          button.addEventListener('click', () => void run(id));
+          grid.appendChild(button);
+        }
+        const all = document.createElement('button');
+        all.textContent = 'Run all scenarios';
+        all.dataset.scenario = 'all';
+        all.addEventListener('click', () => void runAll());
+        grid.appendChild(all);
+
+        window.tokenlensFixture = { tokens, scenarios: scenarios.map((s) => s[0]), run, runAll, burst, manyTokens, now };
+        document.body.dataset.fixtureReady = 'true';
+        if (params.get('auto') === 'all') void runAll();
+      })();
+    </script>
+  </body>
+</html>

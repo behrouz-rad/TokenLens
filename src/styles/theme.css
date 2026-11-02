@@ -1,0 +1,184 @@
+@import 'tailwindcss';
+
+@theme inline {
+  --color-dt-bg: var(--dt-bg);
+  --color-dt-bg-secondary: var(--dt-bg-secondary);
+  --color-dt-bg-tertiary: var(--dt-bg-tertiary);
+  --color-dt-bg-elevated: var(--dt-bg-elevated);
+  --color-dt-bg-hover: var(--dt-bg-hover);
+  --color-dt-bg-active: var(--dt-bg-active);
+  --color-dt-border: var(--dt-border);
+  --color-dt-border-subtle: var(--dt-border-subtle);
+  --color-dt-text: var(--dt-text);
+  --color-dt-text-secondary: var(--dt-text-secondary);
+  --color-dt-text-tertiary: var(--dt-text-tertiary);
+  --color-dt-accent: var(--dt-accent);
+  --color-dt-accent-hover: var(--dt-accent-hover);
+  --color-dt-accent-strong: var(--dt-accent-strong);
+  --color-dt-success: var(--dt-success);
+  --color-dt-warning: var(--dt-warning);
+  --color-dt-error: var(--dt-error);
+  --color-dt-info: var(--dt-info);
+
+  --color-method-get: var(--method-get);
+  --color-method-post: var(--method-post);
+  --color-method-put: var(--method-put);
+  --color-method-delete: var(--method-delete);
+  --color-method-patch: var(--method-patch);
+
+  --font-mono: Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  --text-2xs: 0.625rem;
+  --text-2xs--line-height: 0.875rem;
+
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-fade-in: fade-in 0.15s ease-out;
+  --animate-slide-in: slide-in 0.2s ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+:root,
+.dark {
+  color-scheme: dark;
+  --dt-bg: #1e1e2e;
+  --dt-bg-secondary: #181825;
+  --dt-bg-tertiary: #11111b;
+  --dt-bg-elevated: #252537;
+  --dt-bg-hover: #2a2a3c;
+  --dt-bg-active: #313145;
+  --dt-border: #313145;
+  --dt-border-subtle: #2a2a3c;
+  --dt-text: #cdd6f4;
+  --dt-text-secondary: #a6adc8;
+  --dt-text-tertiary: #a0a6c0;
+  --dt-accent: #89b4fa;
+  --dt-accent-hover: #74c7ec;
+  --dt-accent-strong: #89b4fa;
+  --dt-success: #a6e3a1;
+  --dt-warning: #f9e2af;
+  --dt-error: #f38ba8;
+  --dt-info: #89dceb;
+
+  --method-get: #a6e3a1;
+  --method-post: #f9e2af;
+  --method-put: #89b4fa;
+  --method-delete: #f38ba8;
+  --method-patch: #cba6f7;
+
+  --json-key: #89b4fa;
+  --json-string: #a6e3a1;
+  --json-number: #fab387;
+  --json-boolean: #cba6f7;
+  --json-null: #a0a6c0;
+  --json-bracket: #a0a6c0;
+}
+
+.light {
+  color-scheme: light;
+  --dt-bg: #eff1f5;
+  --dt-bg-secondary: #e6e9ef;
+  --dt-bg-tertiary: #dce0e8;
+  --dt-bg-elevated: #ffffff;
+  --dt-bg-hover: #d5d8e0;
+  --dt-bg-active: #ccd0da;
+  --dt-border: #ccd0da;
+  --dt-border-subtle: #d5d8e0;
+  --dt-text: #4c4f69;
+  --dt-text-secondary: #5c5f77;
+  --dt-text-tertiary: #4f5266;
+  --dt-accent: #1a56d6;
+  --dt-accent-hover: #1d4fb8;
+  --dt-accent-strong: #1646b4;
+  --dt-success: #176617;
+  --dt-warning: #7a4f00;
+  --dt-error: #b0163b;
+  --dt-info: #0f607a;
+
+  --method-get: #176617;
+  --method-post: #7a4f00;
+  --method-put: #1a56d6;
+  --method-delete: #b0163b;
+  --method-patch: #8839ef;
+
+  --json-key: #1a56d6;
+  --json-string: #176617;
+  --json-number: #b84a05;
+  --json-boolean: #8839ef;
+  --json-null: #6c6f85;
+  --json-bracket: #6c6f85;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: var(--dt-bg);
+    color: var(--dt-text);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--dt-accent);
+    outline-offset: -2px;
+  }
+
+  ::selection {
+    background: var(--dt-accent);
+    color: var(--dt-bg);
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--dt-border);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--dt-text-tertiary);
+  }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dt-border) transparent;
+}
+
+[data-separator] {
+  touch-action: none;
+}
