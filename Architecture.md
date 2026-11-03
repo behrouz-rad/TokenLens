@@ -109,6 +109,8 @@ HAR entry (onRequestFinished | getHAR poll)
 Visual baselines live under `e2e/tests/__screenshots__/<platform>/`. The `linux` set is generated in
 the pinned Playwright container (`npm run test:e2e:baselines`) and is what CI compares against; the
 `win32` set serves local Windows runs. Comparisons are strict: no differing pixel is tolerated (`maxDiffPixels: 0`, `threshold: 0.1`).
+The toolbar version badge is masked so a version bump does not invalidate the baselines; its text is
+asserted against `manifest.json` by a separate test.
 
 Fixture: `e2e/fixture/server.mjs` serves a synthetic app (`/app/`) with scenario buttons and API
 endpoints returning 200/201/401/403/500, plus `dist/` as static files.
