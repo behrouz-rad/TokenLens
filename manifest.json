@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TokenLens",
   "description": "Inspect JWT and Bearer tokens from network requests inside Chrome DevTools. Decodes locally; nothing leaves the browser.",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "minimum_chrome_version": "116",
   "devtools_page": "src/devtools/devtools.html",
   "permissions": [],
