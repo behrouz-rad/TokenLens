@@ -27,8 +27,9 @@ content scripts. It consists solely of a DevTools page and panel.
 
 ## Data sharing and sale
 
-No data is collected, so none is shared or sold, used for purposes unrelated to the extension's
-single purpose, or used to determine creditworthiness or for lending purposes.
+TokenLens processes authentication information (JWT and Bearer tokens) and associated network request metadata locally within the user's browser.
+
+No data is transmitted to or collected by the developer or any third party. TokenLens does not share or sell user data, use it for purposes unrelated to its single purpose, or use it to determine creditworthiness or for lending purposes.
 
 ## Changes and contact
 
