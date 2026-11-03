@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { buildScenario, collectErrors, feedObservations, openPanel, tokenItems } from '../../support/panel';
 
 test.describe('theme and layout', () => {
@@ -18,10 +20,19 @@ test.describe('theme and layout', () => {
     await expect(page.locator('html')).toHaveClass(/dark/);
   });
 
+  test('the toolbar shows the manifest version', async ({ page }) => {
+    const { version } = JSON.parse(await readFile(resolve(process.cwd(), 'manifest.json'), 'utf8')) as { version: string };
+    await openPanel(page);
+    await expect(page.getByTestId('app-version')).toHaveText(`v${version}`);
+  });
+
   test('visual baseline: populated overview, requests and timeline in dark and light', async ({ page }) => {
     await openPanel(page);
     await feedObservations(page, buildScenario().observations);
     const nav = page.getByRole('navigation', { name: 'Main sections' });
+    // The version badge changes with every release; masking it keeps the baselines release-independent
+    // while every other pixel stays strictly compared. Its text is asserted by the test above.
+    const screenshot = { fullPage: true, mask: [page.getByTestId('app-version')] };
     for (const theme of ['dark', 'light'] as const) {
       if (theme === 'light') {
         await page.getByRole('button', { name: 'Switch to light theme' }).click();
@@ -29,13 +40,13 @@ test.describe('theme and layout', () => {
       }
       await nav.getByRole('button', { name: 'Overview' }).click();
       await expect(page.getByTestId('token-header-name')).toHaveText('access_token');
-      await expect(page).toHaveScreenshot(`overview-${theme}.png`, { fullPage: true });
+      await expect(page).toHaveScreenshot(`overview-${theme}.png`, screenshot);
       await nav.getByRole('button', { name: 'Requests' }).click();
       await expect(page.getByTestId('requests-explorer').getByTestId('request-row')).toHaveCount(10);
-      await expect(page).toHaveScreenshot(`requests-${theme}.png`, { fullPage: true });
+      await expect(page).toHaveScreenshot(`requests-${theme}.png`, screenshot);
       await nav.getByRole('button', { name: 'Timeline' }).click();
       await expect(page.getByTestId('global-timeline-event').first()).toBeVisible();
-      await expect(page).toHaveScreenshot(`timeline-${theme}.png`, { fullPage: true });
+      await expect(page).toHaveScreenshot(`timeline-${theme}.png`, screenshot);
     }
   });
 
