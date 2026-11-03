@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 import { createSyntheticJwt, withBearer } from '@/core/testing/synthetic';
 import type { CaptureObservation } from '@/core/capture/observation';
+import { scanWcag } from '../../support/axe';
 import { buildScenario, collectErrors, feedObservations, FIXED_NOW, openPanel } from '../../support/panel';
 
 const seconds = (ms: number) => Math.floor(ms / 1000);
@@ -9,11 +9,6 @@ const nav = (page: Page, name: 'Overview' | 'Requests' | 'Timeline') => page.get
 const requestRows = (page: Page) => page.getByTestId('requests-explorer').getByTestId('request-row');
 const timelineEvents = (page: Page) => page.getByTestId('global-timeline-event');
 const statusesOf = (page: Page) => requestRows(page).evaluateAll((rows) => rows.map((r) => (r as HTMLElement).dataset.status));
-
-async function scan(page: Page) {
-  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
-  return results.violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.map((n) => n.target.join(' ')).slice(0, 5) }));
-}
 
 test.describe('Requests explorer', () => {
   test('starts empty and fills with every captured request across tokens', async ({ page }) => {
@@ -269,10 +264,10 @@ test.describe('global Timeline', () => {
       }
       await nav(page, 'Requests').click();
       await expect(requestRows(page).first()).toBeVisible();
-      expect(await scan(page), `requests ${theme}`).toEqual([]);
+      expect(await scanWcag(page), `requests ${theme}`).toEqual([]);
       await nav(page, 'Timeline').click();
       await expect(timelineEvents(page).first()).toBeVisible();
-      expect(await scan(page), `timeline ${theme}`).toEqual([]);
+      expect(await scanWcag(page), `timeline ${theme}`).toEqual([]);
     }
   });
 });

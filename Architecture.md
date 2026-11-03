@@ -112,5 +112,9 @@ the pinned Playwright container (`npm run test:e2e:baselines`) and is what CI co
 The toolbar version badge is masked so a version bump does not invalidate the baselines; its text is
 asserted against `manifest.json` by a separate test.
 
+Accessibility scans go through `scanWcag` (`e2e/support/axe.ts`), which waits for every running
+finite CSS transition and animation to finish before axe-core runs: axe reads computed colours, and a
+scan taken during a theme switch, tab change or dialog fade-in would measure intermediate colours.
+
 Fixture: `e2e/fixture/server.mjs` serves a synthetic app (`/app/`) with scenario buttons and API
 endpoints returning 200/201/401/403/500, plus `dist/` as static files.
