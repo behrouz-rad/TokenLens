@@ -1,26 +1,21 @@
 import { expect, test } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
+import { scanWcag } from '../../support/axe';
 import { buildScenario, feedObservations, openPanel, tokenItems } from '../../support/panel';
-
-async function scan(page: Parameters<typeof openPanel>[0]) {
-  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
-  return results.violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.map((n) => n.target.join(' ')).slice(0, 5) }));
-}
 
 test.describe('accessibility', () => {
   test('empty state has no WCAG A/AA violations', async ({ page }) => {
     await openPanel(page);
-    expect(await scan(page)).toEqual([]);
+    expect(await scanWcag(page)).toEqual([]);
   });
 
   test('populated overview has no WCAG A/AA violations in dark and light themes', async ({ page }) => {
     await openPanel(page);
     await feedObservations(page, buildScenario().observations);
     await expect(page.getByTestId('token-header-name')).toBeVisible();
-    expect(await scan(page)).toEqual([]);
+    expect(await scanWcag(page)).toEqual([]);
     await page.getByRole('button', { name: 'Switch to light theme' }).click();
     await expect(page.locator('html')).toHaveClass(/light/);
-    expect(await scan(page)).toEqual([]);
+    expect(await scanWcag(page)).toEqual([]);
   });
 
   test('popovers and dialog are accessible', async ({ page }) => {
@@ -28,13 +23,31 @@ test.describe('accessibility', () => {
     await feedObservations(page, buildScenario().observations);
     await page.getByRole('button', { name: 'Filters', exact: true }).click();
     await expect(page.getByTestId('filters-popover')).toBeVisible();
-    expect(await scan(page)).toEqual([]);
+    expect(await scanWcag(page)).toEqual([]);
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Maximize payload panel' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    expect(await scan(page)).toEqual([]);
+    expect(await scanWcag(page)).toEqual([]);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toBeHidden();
+  });
+
+  test('contrast is measured once transitions and animations have settled', async ({ page }) => {
+    await openPanel(page);
+    await feedObservations(page, buildScenario().observations);
+    await expect(page.getByTestId('token-header-name')).toBeVisible();
+    // A tenfold slower animation clock makes every transition outlast the gap between an interaction
+    // and the scan on any runner; without it only a fast runner lands inside that window, by chance.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Animation.enable');
+    await cdp.send('Animation.setPlaybackRate', { playbackRate: 0.1 });
+
+    await page.getByRole('button', { name: 'Switch to light theme' }).click();
+    await expect(page.locator('html')).toHaveClass(/light/);
+    expect(await scanWcag(page), 'colour transitions of the theme switch').toEqual([]);
+    await page.getByRole('button', { name: 'Maximize payload panel' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    expect(await scanWcag(page), 'fade-in animation of the dialog').toEqual([]);
   });
 
   test('keyboard users can reach controls, move selection and see focus', async ({ page }) => {
