@@ -206,10 +206,15 @@ variables above are missing.
 
 ## First submission
 
-The first store submission typically needs more than the API provides: listing assets, privacy
-disclosures, possibly a review questionnaire, and the developer verification above. Run the
-pipeline with `store` = `upload-only` the first time, finish the listing in the dashboard, and
-submit from there. Later releases can use `submit-for-review` or `submit-staged`.
+TokenLens has passed its first review and is
+[published on the Chrome Web Store](https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg),
+so releases use `submit-for-review` or `submit-staged`; `upload-only` remains available when the
+listing or privacy tabs need dashboard edits before the submission.
+
+For a brand-new item (a fork, or a re-created listing) the first submission needs more than the
+API provides: listing assets, privacy disclosures, possibly a review questionnaire, and the
+developer verification above. Run the pipeline with `store` = `upload-only` the first time, finish
+the listing in the dashboard, and submit from there.
 
 ## Local dry run
 

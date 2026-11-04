@@ -5,6 +5,8 @@ TokenLens is a Chrome DevTools extension for inspecting JWT and Bearer tokens. I
 open, extracts `Authorization: Bearer` credentials, decodes JWTs locally, correlates each token with
 the requests that carried it, and runs temporal diagnostics. Nothing leaves the browser.
 
+**[Install TokenLens from the Chrome Web Store](https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg)**
+
 ![TokenLens Overview inside Chrome DevTools, dark theme, synthetic tokens](docs/evidence/real-devtools-dark.png)
 
 ## Features
@@ -54,14 +56,23 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 
 ## Installation
 
-Until a Chrome Web Store listing is available, install from a GitHub Release or a local build:
+### Chrome Web Store
+
+Install TokenLens from its
+[Chrome Web Store listing](https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg)
+with **Add to Chrome**. Chrome keeps it up to date.
+
+### Manual installation
+
+To run a specific release or a local build instead:
 
 1. Download `TokenLens-vX.Y.Z.zip` from the [Releases](https://github.com/behrouz-rad/TokenLens/releases)
    page and unzip it, or run `npm ci && npm run build` and use the `dist/` folder.
 2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and select the
    folder.
-3. Open DevTools on any page. The **TokenLens** tab appears next to Elements, Console and the other
-   panels (it may sit in the overflow menu on narrow windows).
+
+Either way, open DevTools on any page afterwards. The **TokenLens** tab appears next to Elements,
+Console and the other panels (it may sit in the overflow menu on narrow windows).
 
 Requires Chrome 116 or newer, or another Chromium-based browser that supports Manifest V3
 DevTools extensions.

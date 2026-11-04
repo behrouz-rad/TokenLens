@@ -1,5 +1,9 @@
 # Chrome Web Store listing
 
+TokenLens is published at
+<https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg> (item id
+`clcfnoleecdldhmbfhjnidinflamflkg`).
+
 The values entered in the Developer Dashboard for the TokenLens item, kept here so the listing can
 be reproduced or reviewed without the dashboard. Title and summary come from `manifest.json` and
 cannot be edited in the dashboard.
@@ -35,5 +39,4 @@ DevTools-coloured background. Regenerate them whenever the evidence images chang
 
 ## Distribution
 
-Free of charge, Public, all regions (dashboard defaults). Unlisted is the alternative for a
-soft launch.
+Free of charge, Public, all regions (dashboard defaults).

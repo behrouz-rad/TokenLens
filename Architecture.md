@@ -7,7 +7,7 @@ choices were made.
 ## Runtime topology
 
 ```
-chrome://extensions (unpacked dist/ or the store package)
+chrome://extensions (Chrome Web Store install, or unpacked dist/ / release ZIP)
 └── manifest.json  — MV3, devtools_page only, permissions: []
     ├── src/devtools/devtools.html → devtools.ts        hidden DevTools page, lives while DevTools is open
     │     CaptureRelay: chrome.devtools.network listeners + getHAR() polling → BroadcastChannel
