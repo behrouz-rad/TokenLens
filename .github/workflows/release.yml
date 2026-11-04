@@ -235,7 +235,9 @@ jobs:
             echo
             echo "## Install"
             echo
-            echo "Download \`${{ needs.build.outputs.zip_name }}\`, unzip it, open \`chrome://extensions\`, enable Developer mode and choose **Load unpacked** on the unzipped folder. Chrome Web Store availability is announced separately once a submission is approved."
+            echo "Install from the [Chrome Web Store](https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg). Store updates follow Google's review, so this version may reach the store a little later than this release."
+            echo
+            echo "To install this exact build manually, download \`${{ needs.build.outputs.zip_name }}\`, unzip it, open \`chrome://extensions\`, enable Developer mode and choose **Load unpacked** on the unzipped folder."
             echo
             echo "## Provenance"
             echo
