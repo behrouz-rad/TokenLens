@@ -5,6 +5,7 @@ TokenLens is a Chrome DevTools extension for inspecting JWT and Bearer tokens. I
 open, extracts `Authorization: Bearer` credentials, decodes JWTs locally, correlates each token with
 the requests that carried it, and runs temporal diagnostics. Nothing leaves the browser.
 
+**[Install TokenLens from the Chrome Web Store](https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg)**
 
 ![TokenLens Overview inside Chrome DevTools, dark theme, synthetic tokens](docs/evidence/real-devtools-dark.png)
 
