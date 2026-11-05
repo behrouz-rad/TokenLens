@@ -9,12 +9,10 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 
 ## 🎬 Demo
 
-## 🎬 Demo
-
 <p align="center">
   <a href="https://www.youtube.com/watch?v=quc4VsCjWhM">
     <img
-      src="https://img.youtube.com/vi/quc4VsCjWhM/hqdefault.jpg"
+      src="https://img.youtube.com/vi/quc4VsCjWhM/maxresdefault.jpg"
       alt="Watch TokenLens Demo"
       width="720"
     />
