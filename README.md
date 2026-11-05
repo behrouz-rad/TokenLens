@@ -12,7 +12,7 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
     <img src="demo/tokenlens-demo-poster.jpg" width="900" alt="TokenLens demo video: capturing, decoding and tracing Bearer tokens inside Chrome DevTools">
   </a>
   <br>
-  <sub>▶ <a href="demo/tokenlens-demo.mp4">Watch the one-minute demo</a>, filmed in real Chrome DevTools with synthetic tokens</sub>
+  <sub>▶ <a href="demo/tokenlens-demo.mp4">Watch the one-minute demo</a></sub>
 </p>
 
 ## Features
