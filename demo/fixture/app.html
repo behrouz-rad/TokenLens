@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Acme Console (synthetic demo)</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; margin: 0; padding: 24px; background: #11111b; color: #cdd6f4; }
+      h1 { font-size: 18px; margin: 0 0 6px; }
+      p { margin: 0; color: #a6adc8; }
+      #log { margin-top: 16px; font: 12px ui-monospace, monospace; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Acme Console</h1>
+    <p>Synthetic application for the TokenLens demo video. Every token here is generated locally with a placeholder signature and cannot authenticate anything.</p>
+    <div id="log" aria-live="polite"></div>
+
+    <script>
+      (function () {
+        const params = new URLSearchParams(location.search);
+        const now = Number(params.get('now')) || Date.now();
+        const sec = Math.floor(now / 1000);
+        const SIG = 'ZGVtby1zaWduYXR1cmUtbm90LXJlYWwtc3ludGhldGljLW9ubHk';
+
+        function b64url(text) {
+          const bytes = new TextEncoder().encode(text);
+          let binary = '';
+          for (const b of bytes) binary += String.fromCharCode(b);
+          return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+        const jwt = (header, payload) => b64url(JSON.stringify(header)) + '.' + b64url(JSON.stringify(payload)) + '.' + SIG;
+        const ISS = 'https://auth.example.test';
+
+        const tokens = {
+          // RFC 9068 access token for the main API: the token the video inspects.
+          access: jwt({ alg: 'RS256', typ: 'at+jwt', kid: 'acme-2026-11' }, {
+            iss: ISS, sub: 'user_7Hq2', aud: 'https://api.example.test', client_id: 'acme-console',
+            scope: 'openid profile orders:read orders:write',
+            iat: sec - 300, nbf: sec - 300, exp: sec + 3300, jti: 'at_4f9c1e27',
+          }),
+          id: jwt({ alg: 'RS256', typ: 'JWT', kid: 'acme-2026-11' }, {
+            iss: ISS, sub: 'user_7Hq2', aud: 'acme-console', nonce: 'n-0S6_WzA2Mj',
+            name: 'Alex Rivera', email: 'alex.rivera@example.test', auth_time: sec - 300,
+            iat: sec - 300, exp: sec + 3300,
+          }),
+          // About to expire: shows the Expiring status and its live countdown.
+          notifications: jwt({ alg: 'RS256', typ: 'at+jwt', kid: 'acme-2026-11' }, {
+            iss: ISS, sub: 'user_7Hq2', aud: 'https://api.example.test', client_id: 'acme-notifier',
+            scope: 'notifications:read', iat: sec - 3360, exp: sec + 240, jti: 'at_91b0d3aa',
+          }),
+          // Expired six minutes ago and still sent by the billing widget: the cause of the 401s.
+          billing: jwt({ alg: 'RS256', typ: 'at+jwt', kid: 'acme-2026-10' }, {
+            iss: ISS, sub: 'user_7Hq2', aud: 'https://billing.example.test', client_id: 'acme-billing',
+            scope: 'invoices:read', iat: sec - 3960, exp: sec - 360, jti: 'at_2c7e5f10',
+          }),
+          search: 'demo-opaque-7b1f2c9e4a6d',
+          // Internal service token without exp: shows the No expiry diagnostic.
+          reports: jwt({ alg: 'HS256', typ: 'JWT' }, { iss: 'https://reports.example.test', sub: 'svc-reports', iat: sec - 7200 }),
+        };
+
+        const API = 'http://api.example.test';
+        const SCRIPTS = {
+          initial: [
+            [0, 'access', 'GET', API + '/v1/me'],
+            [300, 'id', 'GET', API + '/v1/session'],
+            [600, 'access', 'GET', API + '/v1/orders?status=open'],
+            [900, 'notifications', 'GET', API + '/v1/notifications'],
+            [1200, 'billing', 'GET', 'http://billing.example.test/v1/invoices?period=2026-10'],
+            [1500, 'search', 'GET', 'http://search.example.test/v1/suggest?q=1042'],
+            [1800, 'reports', 'GET', API + '/v1/reports/weekly'],
+            [2100, 'access', 'GET', API + '/v1/orders/1042'],
+            [2400, 'access', 'POST', API + '/v1/orders'],
+            [2700, 'access', 'DELETE', API + '/v1/orders/1042'],
+            [3000, 'billing', 'GET', 'http://billing.example.test/v1/invoices?period=2026-10'],
+            [3300, 'access', 'GET', API + '/v1/orders?status=shipped'],
+          ],
+        };
+
+        const log = document.getElementById('log');
+        async function send(tokenKey, method, url) {
+          const response = await fetch(url, {
+            method,
+            headers: { Authorization: 'Bearer ' + tokens[tokenKey], 'Content-Type': 'application/json' },
+            body: method === 'POST' ? JSON.stringify({ sku: 'A-1042', quantity: 1 }) : undefined,
+            cache: 'no-store',
+          });
+          log.textContent = `${method} ${url} → ${response.status}\n` + log.textContent;
+          return response.status;
+        }
+
+        /** Plays a scripted burst; resolves with the statuses once every request has finished. */
+        function play(name) {
+          const script = SCRIPTS[name];
+          if (!script) throw new Error('unknown script ' + name);
+          return Promise.all(script.map(([at, key, method, url]) => new Promise((r) => setTimeout(r, at)).then(() => send(key, method, url))));
+        }
+
+        window.acmeDemo = { play, count: (name) => SCRIPTS[name].length };
+        document.body.dataset.demoReady = 'true';
+      })();
+    </script>
+  </body>
+</html>

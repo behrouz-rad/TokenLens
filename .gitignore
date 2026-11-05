@@ -11,6 +11,10 @@ playwright-report/
 e2e/.artifacts/
 .playwright-cli/
 
+# Promotional video production: local tools, models and intermediate renders
+demo/node_modules/
+demo/work/
+
 # Local release output (the hosted run is the build of record)
 /release/
 /*.zip

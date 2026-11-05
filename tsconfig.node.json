@@ -19,5 +19,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "playwright.config.ts", "e2e/**/*.ts", "scripts/**/*.ts"]
+  "include": ["vite.config.ts", "vitest.config.ts", "playwright.config.ts", "e2e/**/*.ts", "scripts/**/*.ts", "demo/**/*.ts"],
+  "exclude": ["demo/node_modules", "demo/work"]
 }

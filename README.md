@@ -7,7 +7,13 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 
 **[Install TokenLens from the Chrome Web Store](https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg)**
 
-![TokenLens Overview inside Chrome DevTools, dark theme, synthetic tokens](docs/evidence/real-devtools-dark.png)
+<p align="center">
+  <a href="demo/tokenlens-demo.mp4">
+    <img src="demo/tokenlens-demo-poster.jpg" width="900" alt="TokenLens demo video: capturing, decoding and tracing Bearer tokens inside Chrome DevTools">
+  </a>
+  <br>
+  <sub>▶ <a href="demo/tokenlens-demo.mp4">Watch the one-minute demo</a>, filmed in real Chrome DevTools with synthetic tokens</sub>
+</p>
 
 ## Features
 
@@ -35,6 +41,8 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 - **Bounded memory.** Configurable limits with consistent eviction (least-recently-seen tokens,
   oldest requests).
 - **Dark and light themes**, resizable columns, and a single-column layout for narrow panels.
+
+![TokenLens Overview inside Chrome DevTools, dark theme, synthetic tokens](docs/evidence/real-devtools-dark.png)
 
 ![Requests explorer](docs/evidence/real-devtools-requests.png)
 
@@ -128,6 +136,10 @@ npm run check    # typecheck + lint + unit/component tests + build + manifest ch
 See `Architecture.md` for the data flow and layering, `CLAUDE.md` for the engineering rules, and
 `docs/decisions/` for the reasoning behind the capture relay, canonical token identity,
 diagnostics wording and the release pipeline.
+
+The demo video is produced reproducibly from `demo/`, which films the built extension in real
+DevTools with synthetic traffic, using its own toolchain outside the extension build:
+`cd demo && npm ci && npm run video`. See `demo/README.md`.
 
 ## Testing
 
