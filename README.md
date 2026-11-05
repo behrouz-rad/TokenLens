@@ -8,10 +8,21 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 **[Install TokenLens from the Chrome Web Store](https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg)**
 
 ## 🎬 Demo
+
+## 🎬 Demo
+
 <p align="center">
-  [![Watch TokenLens Demo](https://img.youtube.com/vi/quc4VsCjWhM/maxresdefault.jpg)](https://www.youtube.com/watch?v=quc4VsCjWhM)
+  <a href="https://www.youtube.com/watch?v=quc4VsCjWhM">
+    <img
+      src="https://img.youtube.com/vi/quc4VsCjWhM/hqdefault.jpg"
+      alt="Watch TokenLens Demo"
+      width="720"
+    />
+  </a>
   <br>
-  <sub>▶ <a href="demo/tokenlens-demo.mp4">Watch the one-minute demo</a></sub>
+  <sub>
+    ▶ <a href="https://www.youtube.com/watch?v=quc4VsCjWhM">Watch the one-minute demo</a>
+  </sub>
 </p>
 
 ## Features
