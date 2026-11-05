@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<!-- Glyph: Lucide "mouse-pointer-click" (ISC License, https://lucide.dev). Tile and colours follow the TokenLens icon. -->
+<defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="24" y2="24"><stop offset="0" stop-color="#89b4fa"/><stop offset="1" stop-color="#b4befe"/></linearGradient></defs>
+<rect x="0.5" y="0.5" width="31" height="31" rx="8" fill="#1e1e2e" stroke="#45475a"/>
+<g transform="translate(5 5) scale(0.9167)" stroke="url(#g)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g>
+</svg>

@@ -7,7 +7,7 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 
 **[Install TokenLens from the Chrome Web Store](https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg)**
 
-## 🎬 Demo
+## <img src="docs/icons/demo.svg" width="28" height="28" align="absmiddle" alt=""> Demo
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=quc4VsCjWhM">
@@ -23,7 +23,7 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
   </sub>
 </p>
 
-## Features
+## <img src="docs/icons/features.svg" width="28" height="28" align="absmiddle" alt=""> Features
 
 - **Capture** of observed network requests that carry an `Authorization: Bearer` header while
   Chrome DevTools is open. Observation starts when DevTools opens, not when the TokenLens tab is
@@ -56,7 +56,7 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 
 ![Global timeline](docs/evidence/real-devtools-timeline.png)
 
-## Privacy and security
+## <img src="docs/icons/privacy.svg" width="28" height="28" align="absmiddle" alt=""> Privacy and security
 
 - No telemetry, analytics, external requests, remote code, background worker, content scripts or
   host permissions. The manifest declares `permissions: []`.
@@ -70,7 +70,7 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
   not verify signatures or fetch JWKS, so "Active" means "not expired", not "trusted".
 - The full privacy policy is in [PRIVACY.md](PRIVACY.md).
 
-## Installation
+## <img src="docs/icons/installation.svg" width="28" height="28" align="absmiddle" alt=""> Installation
 
 ### Chrome Web Store
 
@@ -93,7 +93,7 @@ Console and the other panels (it may sit in the overflow menu on narrow windows)
 Requires Chrome 116 or newer, or another Chromium-based browser that supports Manifest V3
 DevTools extensions.
 
-## Usage
+## <img src="docs/icons/usage.svg" width="28" height="28" align="absmiddle" alt=""> Usage
 
 1. Open DevTools, then trigger requests on the page that send `Authorization: Bearer …`. Only
    traffic observed after DevTools opened can be seen.
@@ -113,7 +113,7 @@ To try it without a real application: `npm run fixture:serve`, then open
 <http://127.0.0.1:4173/app/>; every button sends a synthetic token to a local endpoint that
 answers 200, 201, 401, 403 or 500.
 
-## Known limitations
+## <img src="docs/icons/limitations.svg" width="28" height="28" align="absmiddle" alt=""> Known limitations
 
 - Only traffic observed after DevTools opened is visible, and only what the
   `chrome.devtools.network` API reports for the inspected page (requests completed while DevTools
@@ -127,7 +127,7 @@ answers 200, 201, 401, 403 or 500.
 - Branded Google Chrome ignores `--load-extension`, so automated extension tests use Playwright's
   Chromium. Loading the unpacked extension manually works in any Chromium-based browser.
 
-## Development
+## <img src="docs/icons/development.svg" width="28" height="28" align="absmiddle" alt=""> Development
 
 Prerequisites: Node.js 22.12 or newer (24 is used in CI), npm 10 or newer, a Chromium-based
 browser, and `npx playwright install chromium` once for end-to-end tests. Docker is needed only to
@@ -149,7 +149,7 @@ The demo video is produced reproducibly from `demo/`, which films the built exte
 DevTools with synthetic traffic, using its own toolchain outside the extension build:
 `cd demo && npm ci && npm run video`. See `demo/README.md`.
 
-## Testing
+## <img src="docs/icons/testing.svg" width="28" height="28" align="absmiddle" alt=""> Testing
 
 | Command | Runs |
 | --- | --- |
@@ -166,7 +166,7 @@ DevTools with synthetic traffic, using its own toolchain outside the extension b
 Visual baselines live under `e2e/tests/__screenshots__/<platform>/`; CI compares against the
 `linux` set. The DevTools project needs a desktop session and is the pre-release acceptance gate.
 
-## Continuous integration and releases
+## <img src="docs/icons/releases.svg" width="28" height="28" align="absmiddle" alt=""> Continuous integration and releases
 
 CI runs typecheck, lint, unit, component, build, manifest and Playwright checks on every pull
 request and push to `main`. It never publishes.
@@ -181,6 +181,6 @@ verified assets without rebuilding. The release scripts have their own unit test
 mocked GitHub and Chrome Web Store API responses. Details, the local dry run and the one-time store
 setup are in `docs/release.md`.
 
-## License
+## <img src="docs/icons/license.svg" width="28" height="28" align="absmiddle" alt=""> License
 
 [MIT](LICENSE)

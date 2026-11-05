@@ -7,7 +7,6 @@
  *   5. brand cards and backdrop            scripts/brand.mjs
  *   6. Screenplay edit                     scripts/edit.mjs
  *   7. final cut and mix                   scripts/assemble.mjs
- *   8. README poster                       scripts/poster.mjs
  * Flags: --skip-build (reuse dist/), --skip-record (re-edit the last take), --no-music.
  */
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -16,7 +15,6 @@ import { buildDirections, buildScenario, readManifest, DIRECTIONS_FILE, SCENARIO
 import { renderBrand } from './brand.mjs';
 import { edit } from './edit.mjs';
 import { assemble } from './assemble.mjs';
-import { poster } from './poster.mjs';
 import { DEMO_DIR, ROOT_DIR, WORK_DIR, log, run } from './paths.mjs';
 
 const has = (flag) => process.argv.includes(flag);
@@ -62,4 +60,3 @@ log('== Screenplay edit');
 await edit();
 log('== final cut');
 await assemble({ music: !has('--no-music') });
-await poster();

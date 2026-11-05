@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+<!-- Glyph: Lucide "flask-conical" (ISC License, https://lucide.dev). Tile and colours follow the TokenLens icon. -->
+<defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="24" y2="24"><stop offset="0" stop-color="#89b4fa"/><stop offset="1" stop-color="#b4befe"/></linearGradient></defs>
+<rect x="0.5" y="0.5" width="31" height="31" rx="8" fill="#1e1e2e" stroke="#45475a"/>
+<g transform="translate(5 5) scale(0.9167)" stroke="url(#g)" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"/><path d="M6.453 15h11.094"/><path d="M8.5 2h7"/></g>
+</svg>

@@ -48,7 +48,6 @@ Leave the DevTools window alone while it records. Covering it is fine; clicking 
 | Brand cards and backdrop | `scripts/brand.mjs` + `brand/brand.html` | `brand/intro.mp4`, `outro.mp4`, `background.png` |
 | Edit (cursor, zooms, highlights, captions) | `scripts/edit.mjs` → `screenplay render` | `main.mp4`, `main.storyboard.png` |
 | Final cut and mix | `scripts/assemble.mjs` (+ `scripts/music.mjs`) | `../tokenlens-demo.mp4` |
-| README poster | `scripts/poster.mjs` | `../tokenlens-demo-poster.jpg` |
 | Quality check (manual) | `npm run inspect` | stream facts, loudness, `review/contact-sheet.png` |
 
 ## How it fits together
