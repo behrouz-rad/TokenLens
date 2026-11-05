@@ -6,7 +6,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'playwright-report/**', 'test-results/**', 'e2e/.artifacts/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'playwright-report/**', 'test-results/**', 'e2e/.artifacts/**', 'demo/node_modules/**', 'demo/work/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -55,7 +55,7 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
   },
   {
-    files: ['e2e/fixture/**/*.{js,mjs}', 'scripts/**/*.{js,mjs}'],
+    files: ['e2e/fixture/**/*.{js,mjs}', 'scripts/**/*.{js,mjs}', 'demo/**/*.{js,mjs}'],
     rules: { 'no-console': 'off' },
   }
 );
