@@ -9,22 +9,27 @@ text is listed too. Every clip is checked by transcribing it with Whisper
 | # | Scene | Line (caption) | Spoken as |
 | --- | --- | --- | --- |
 | 1 | Intro | Meet TokenLens: JWT and Bearer token inspection, right inside Chrome DevTools. | "J.W.T." spelled out |
-| 2 | Capture | Open DevTools, use your app, and TokenLens catches every Bearer token. | |
+| 2 | Capture | Open DevTools, use your app, and TokenLens collects the Bearer tokens it sends. | |
 | 3 | Capture | One record per credential, with a live status counting down to expiry. | |
 | 4 | Decode | Select a token to decode it locally: | |
 | 5 | Decode | claims, scopes and expiry, all in plain sight. | |
 | 6 | Decode | Diagnostics check expiry and key claims, and say what was not verified. | |
-| 7 | Requests | Requests shows every authenticated call and the token that carried it. | |
-| 8 | Requests | Filter to failures, and the culprit stands out: | |
-| 9 | Requests | an expired token behind every 401. | "four-oh-one" |
+| 7 | Requests | Requests lists every Bearer-authenticated call and the token it used. | |
+| 8 | Requests | Filter failed requests, then inspect the token they used. | |
+| 9 | Requests | Here, both 401s used an expired token. | "four-oh-ones" |
 | 10 | Timeline | The Timeline puts every event in order: | |
 | 11 | Timeline | observed requests, plus issue and expiry times from each token's claims. | |
-| 12 | Outro | Everything stays in your browser. TokenLens: inspect locally, understand instantly. Free on the Chrome Web Store. | |
+| 12 | Decoder | Have a token from somewhere else? Paste it into the Decoder. | |
+| 13 | Decoder | It decodes on the spot, with no network request. | |
+| 14 | Decoder | Claims at a glance, with the signature marked not verified. | |
+| 15 | Decoder | Inspect header and payload, switch to raw JSON, | |
+| 16 | Decoder | and copy what you need. | |
+| 17 | Outro | Everything stays in your browser. TokenLens: inspect locally, understand instantly. Free on the Chrome Web Store. | |
 
 ## Why each line is accurate
 
-- **"catches every Bearer token"**: within what DevTools reports while it is open, which is the
-  scenario shown (README, *Known limitations*).
+- **"collects the Bearer tokens it sends"**: scoped to the app's own traffic while DevTools is
+  open, which is what the `chrome.devtools.network` API reports (README, *Known limitations*).
 - **"One record per credential"**: invariant 1, one `Token` per distinct Bearer value.
 - **"live status counting down to expiry"**: status is temporal only and updates on its own
   deadline. *Active* means "not expired", not "trusted".
@@ -32,7 +37,18 @@ text is listed too. Every clip is checked by transcribing it with Whisper
 - **"say what was not verified"**: the diagnostics show *Signature present, not verified*,
   *Present. Whether it matches the receiving API was not checked*, and clock skew *Not measured*.
   The video never claims verification.
+- **"every Bearer-authenticated call"**: Requests lists requests that carried a Bearer token;
+  others are counted, not listed.
+- **"inspect the token they used" / "both 401s used an expired token"**: an observation, not a
+  diagnosis. The two 401s from `billing.example.test` carried a token whose `exp` had passed; the
+  third failure in the filter (a 403) used an active token, so the line names only the 401s.
+  TokenLens does not claim to know why a server answered as it did.
 - **"issue and expiry times from each token's claims"**: Timeline marks these as *CLAIM* events,
   apart from *OBSERVED* ones.
+- **"Paste it into the Decoder" / "no network request"**: the Decoder decodes pasted input in the
+  panel and never sends it anywhere (CLAUDE.md invariant 10). The recorder checks that the paste
+  adds no captured token or request.
+- **"the signature marked not verified"**: the Decoder shows *Signature present, not verified*
+  and *JWT decoded · signature not verified*. Nothing is verified, decrypted or re-signed.
 - **"Everything stays in your browser" / "Free"**: no network requests, no permissions, and the
   store listing is free of charge (`docs/store/listing.md`).

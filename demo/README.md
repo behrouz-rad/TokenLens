@@ -1,6 +1,6 @@
 # TokenLens promotional video
 
-`tokenlens-demo.mp4` is a 1920×1080, 30 fps launch video for the Chrome Web Store listing, the
+`tokenlens-demo.mp4` is a 1920×1080, 30 fps product introduction for the Chrome Web Store listing, the
 README and social posts. Everything in it is reproducible from this folder with one command.
 
 - [`storyboard.md`](storyboard.md): scenes, timing and what each one proves
@@ -12,7 +12,7 @@ README and social posts. Everything in it is reproducible from this folder with 
 The product footage is the **built extension running inside real Chrome DevTools**. It is not
 the standalone development panel and not a mock-up. [`record.spec.ts`](record.spec.ts) reuses the
 raw CDP client from `e2e/support/devtools.ts`. It opens an undocked DevTools window on a synthetic
-app, clicks the real *TokenLens* tab, and drives the panel with real mouse and wheel input.
+app, clicks the real *TokenLens* tab, and drives the panel with real mouse, wheel and text input.
 It films the DevTools window with `Page.startScreencast`, so only that window is captured: no
 desktop, notifications or other applications can appear.
 
@@ -49,6 +49,7 @@ Leave the DevTools window alone while it records. Covering it is fine; clicking 
 | Edit (cursor, zooms, highlights, captions) | `scripts/edit.mjs` → `screenplay render` | `main.mp4`, `main.storyboard.png` |
 | Final cut and mix | `scripts/assemble.mjs` (+ `scripts/music.mjs`) | `../tokenlens-demo.mp4` |
 | Quality check (manual) | `npm run inspect` | stream facts, loudness, `review/contact-sheet.png` |
+| Step validation | `npm test` (`scripts/scenario.test.mjs`) | recorder-only fields stripped, strict Screenplay schema |
 
 ## How it fits together
 
@@ -59,16 +60,25 @@ path. `screenplay render` then edits it exactly as it would edit its own recordi
 `scenes.mjs` generates both the strict Screenplay scenario and the recorder's directions, so they
 cannot drift apart.
 
-## Rejected takes
+## Checks on every take
 
-The recorder requires exactly the 12 Bearer requests the synthetic app sends. In some runs
-TokenLens lists a 13th entry: a status-less, "<1 ms" twin of a request that is really in the
-list. `getHAR()` afterwards shows only the 12 real entries. The likely cause is the relay's
-reconciliation of live `onRequestFinished` events with `getHAR()` polls (`harEntryKey` in
-`src/core/capture/observation.ts` includes status and time). A poll that lands while a request is
-still in flight produces a different key for that request. A take that shows the twin
-misstates the traffic, so the build rejects it and films again (up to twelve takes) rather
-than editing it out. A rejected take fails within its first step, so a reshoot costs about 20 s.
+The recorder rejects a take, and the build films again (up to twelve takes), when the footage
+would misstate what TokenLens does:
+
+- The Requests list must hold exactly the 12 Bearer requests the synthetic app sends, right after
+  the burst and again at the end of the take. A rejected take fails within its first step, so a
+  reshoot costs about 20 s.
+- Steps with `expect` wait for the real UI to show the result (for example *JWT decoded ·
+  signature not verified* after the paste) and fail if it never appears.
+- After filming, the recorder opens the Overview off camera and checks that the token and request
+  counts are exactly what they were before the Decoder scene: pasting a token never adds to the
+  capture session.
+- Any runtime error in the panel rejects the take.
+
+The token pasted into the Decoder comes from `acmeDemo.sample('decoder')` in
+[`fixture/app.html`](fixture/app.html). The page never sends it, and its times are relative to the
+page load. The recorder clicks the field and inserts the whole token with one CDP
+`Input.insertText` call, the way a paste arrives; nothing in the panel is set directly.
 
 ## Audio
 

@@ -11,7 +11,7 @@ import { join, relative } from 'node:path';
 import { LINES, STEPS, VIEWPORT } from '../scenes.mjs';
 import { WORK_DIR, log } from './paths.mjs';
 
-const RECORDER_ONLY = new Set(['scene', 'line', 'play', 'wheel']);
+export const RECORDER_ONLY = new Set(['scene', 'line', 'play', 'wheel', 'paste', 'expect']);
 const KINDS = ['click', 'hover', 'highlight', 'callout', 'zoomTo', 'pause', 'type', 'scroll', 'wait'];
 
 export const SCENARIO_FILE = join(WORK_DIR, 'tokenlens-demo.json');
@@ -23,13 +23,37 @@ export function readManifest() {
   return JSON.parse(readFileSync(file, 'utf8'));
 }
 
-export function buildScenario(manifest) {
-  const steps = STEPS.map((step, index) => {
-    const kind = KINDS.find((k) => k in step);
-    if (!kind) throw new Error(`step ${index + 1} has no supported action`);
+/**
+ * Rejects steps the DevTools recorder would misread, before anything is filmed: one action per
+ * step, known narration lines, `paste` only on a click into a panel field, `expect` as
+ * [{ in, text }] with non-empty strings.
+ */
+export function validateSteps(steps, lines) {
+  steps.forEach((step, index) => {
+    const at = `step ${index + 1}`;
+    const kinds = KINDS.filter((k) => k in step);
+    if (kinds.length !== 1) throw new Error(`${at} needs exactly one action, found ${kinds.length ? kinds.join(', ') : 'none'}`);
+    if (step.line !== undefined && !(step.line in lines)) throw new Error(`${at}: unknown narration line "${step.line}"`);
+    if (step.paste !== undefined) {
+      if (kinds[0] !== 'click') throw new Error(`${at}: paste needs a click step that focuses the field`);
+      if (typeof step.paste !== 'string' || !step.paste) throw new Error(`${at}: paste names a sample of the demo page`);
+      if (step.click.startsWith('devtools:')) throw new Error(`${at}: paste targets a field in the TokenLens panel`);
+    }
+    if (step.expect !== undefined) {
+      const ok = Array.isArray(step.expect) && step.expect.length > 0 && step.expect.every(
+        (e) => e && typeof e.in === 'string' && e.in && typeof e.text === 'string' && e.text && Object.keys(e).length === 2
+      );
+      if (!ok) throw new Error(`${at}: expect is a non-empty list of { in, text }`);
+    }
+  });
+}
+
+export function buildScenario(manifest, steps = STEPS, lines = LINES) {
+  validateSteps(steps, lines);
+  const scenarioSteps = steps.map((step, index) => {
     const out = Object.fromEntries(Object.entries(step).filter(([k]) => !RECORDER_ONLY.has(k)));
     if (step.line) {
-      const line = LINES[step.line];
+      const line = lines[step.line];
       const clip = manifest[step.line];
       if (!line || !clip) throw new Error(`step ${index + 1}: unknown narration line "${step.line}"`);
       out.say = line.caption;
@@ -60,14 +84,15 @@ export function buildScenario(manifest) {
       frame: 'none',
     },
     output: { width: 1920, height: 1080, fps: 30, path: 'main.mp4' },
-    steps,
+    steps: scenarioSteps,
   };
 }
 
-export function buildDirections(manifest) {
+export function buildDirections(manifest, steps = STEPS, lines = LINES) {
+  validateSteps(steps, lines);
   return {
     viewport: VIEWPORT,
-    steps: STEPS.map((step, index) => {
+    steps: steps.map((step, index) => {
       const kind = KINDS.find((k) => k in step);
       const clip = step.line ? manifest[step.line] : undefined;
       return {
@@ -78,6 +103,8 @@ export function buildDirections(manifest) {
         seconds: typeof step[kind] === 'number' ? step[kind] : undefined,
         play: step.play,
         wheel: step.wheel,
+        paste: step.paste,
+        expect: step.expect,
         hold: step.hold,
         duration: step.duration,
         // Same rule as Screenplay's own recorder: the step lasts until its sentence has been heard.

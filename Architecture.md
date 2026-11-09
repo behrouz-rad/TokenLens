@@ -121,6 +121,13 @@ textarea input (native paste or typing)
 - Only traffic after DevTools opened is observable. `onRequestFinished` has been observed not to
   fire for requests made before the first navigation after DevTools opened; the relay polls
   `getHAR()` (1 s, slowing to 5 s above 2 000 entries) and de-duplicates by request key.
+- `getHAR()` also lists unfinished requests: in flight (status 0, no duration, no `_error`) and,
+  briefly, with a response whose `timings.receive` and `time` still change. The relay skips
+  in-flight entries (failed and cancelled requests carry `_error` and are kept), keys completed
+  requests by their settled timing phases instead of `time`, and emits a completed entry first
+  seen in a poll once `onRequestFinished` delivers it or the next poll reports it unchanged.
+  Each request is therefore emitted once, with its final values; one seen only through polling
+  appears one poll later.
 - DevTools recreates the extension panel frame on inspected-page navigation. The relay survives
   and the new panel resynchronises from the replay buffer.
 - Branded Google Chrome ignores `--load-extension`; automation uses Playwright's Chromium.

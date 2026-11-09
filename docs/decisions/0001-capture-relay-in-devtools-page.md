@@ -49,6 +49,11 @@ sequence cursor in the capture session makes replay idempotent.
   are kept so nothing is re-emitted).
 - `getHAR()` polling costs one serialisation per second while the log is small and every five
   seconds once it exceeds 2 000 entries. This is the price of reliable capture.
+- `getHAR()` reports requests before they finish, so polled entries are reconciled with the live
+  events rather than trusted as they come: in-flight entries are skipped, the request key ignores
+  the duration that is still changing, and a completed entry seen only in a poll is emitted once a
+  later poll shows it unchanged. A request seen only through polling therefore appears one poll
+  later, and a request that never completes is not listed.
 - No background worker and no additional permissions.
 
 ## Validation
