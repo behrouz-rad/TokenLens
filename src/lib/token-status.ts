@@ -11,7 +11,7 @@ export const STATUS_LABELS: Record<TokenStatus, string> = {
   active: 'Active',
   expiring: 'Expiring',
   expired: 'Expired',
-  'not-yet-valid': 'Not yet valid',
+  'not-yet-valid': 'Not yet active',
   'no-expiry': 'No expiry',
   malformed: 'Invalid',
 };

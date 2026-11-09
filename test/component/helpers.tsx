@@ -3,6 +3,7 @@ import { Toaster } from 'sonner';
 import type { ReactElement } from 'react';
 import { resetCaptureStoreForTests, useCaptureStore } from '@/state/capture-store';
 import { resetUIStoreForTests } from '@/state/ui-store';
+import { resetDecoderStoreForTests } from '@/state/decoder-store';
 import { createSyntheticJwt, resetSyntheticSequence, withBearer } from '@/core/testing/synthetic';
 import type { CaptureObservation } from '@/core/capture/observation';
 
@@ -18,6 +19,7 @@ export function resetStores(): void {
   resetSyntheticSequence();
   resetCaptureStoreForTests();
   resetUIStoreForTests();
+  resetDecoderStoreForTests();
   try {
     localStorage.clear();
   } catch {

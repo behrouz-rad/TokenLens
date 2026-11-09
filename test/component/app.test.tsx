@@ -67,7 +67,7 @@ describe('App', () => {
     seed(standardScenario());
     renderWithStores(<App />);
     const nav = screen.getByRole('navigation', { name: 'Main sections' });
-    expect(within(nav).getAllByRole('button').map((b) => b.textContent)).toEqual(['Overview', 'Requests', 'Timeline']);
+    expect(within(nav).getAllByRole('button').map((b) => b.textContent)).toEqual(['Overview', 'Requests', 'Timeline', 'Decoder']);
     expect(screen.queryByText(/Coming soon/)).not.toBeInTheDocument();
 
     await user.click(within(nav).getByRole('button', { name: 'Requests' }));

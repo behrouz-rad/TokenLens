@@ -7,7 +7,8 @@ inspected page's network requests. This policy describes what the extension does
 
 While Chrome DevTools is open on a page, TokenLens reads the `Authorization: Bearer` header of
 requests that the DevTools network API reports for that page, together with each request's URL,
-method, status code and timing. Bearer tokens are authentication information.
+method, status code and timing. It also decodes any token you paste into its Decoder section.
+Bearer tokens are authentication information.
 
 ## What happens to it
 
@@ -16,9 +17,12 @@ method, status code and timing. Bearer tokens are authentication information.
   and contains no analytics, telemetry, crash reporting or advertising.
 - Captured tokens and requests are kept in memory only, for the duration of the DevTools session.
   Closing DevTools, or clicking *Clear*, discards them. They are never written to disk.
+- A token pasted into the Decoder is kept in memory only while the panel is open, separately from
+  captured data. It is never stored, and it is discarded when you click *Clear input*, close
+  DevTools, or when DevTools reloads the panel after the inspected page navigates.
 - The only data stored persistently are UI preferences (theme, thresholds, capture limits, layout),
   saved in the panel's `localStorage`. They contain no tokens or request data.
-- A token value is copied to the clipboard only when you click *Copy*.
+- A token value or decoded content is copied to the clipboard only when you click a copy button.
 
 ## Permissions
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useSelectedToken } from '@/hooks/use-selected-token';
 import { useNow } from '@/state/clock';
 import { getAudienceClaim, getNumericDateClaim, getScopes, getStringClaim } from '@/core/jwt/decoder';
@@ -51,27 +51,30 @@ function buildSummaryRows(payload: JwtPayload, now: number): ClaimRow[] {
 export function ClaimsSummary() {
   const token = useSelectedToken();
   const now = useNow(1000);
+  if (!token?.decoded) return null;
+  return <ClaimsSummaryCard payload={token.decoded.payload} now={now} />;
+}
+
+/** Standard claims of a decoded payload with temporal checks against `now`; the other claims on request. */
+export function ClaimsSummaryCard({ payload, now }: { payload: JwtPayload; now: number }) {
   const [showAll, setShowAll] = useState(false);
+  const headingId = useId();
 
   const rows = useMemo(() => {
-    const payload = token?.decoded?.payload;
-    if (!payload) return { summary: [] as ClaimRow[], extra: [] as ClaimRow[] };
     const summary = buildSummaryRows(payload, now);
     const extra: ClaimRow[] = Object.entries(payload)
       .filter(([key]) => !STANDARD_CLAIMS.includes(key))
       .map(([key, value]) => ({ key, value: stringifyClaimValue(value), severity: 'info' as const }));
     return { summary, extra };
-  }, [token, now]);
+  }, [payload, now]);
 
-  if (!token?.decoded) return null;
-
-  const totalClaims = Object.keys(token.decoded.payload).length;
+  const totalClaims = Object.keys(payload).length;
   const visibleRows = showAll ? [...rows.summary, ...rows.extra] : rows.summary;
 
   return (
-    <section className="rounded-lg border border-dt-border bg-dt-bg-secondary" aria-labelledby="claims-summary-heading" data-testid="claims-summary">
+    <section className="rounded-lg border border-dt-border bg-dt-bg-secondary" aria-labelledby={headingId} data-testid="claims-summary">
       <div className="flex items-center justify-between border-b border-dt-border px-3 py-2">
-        <h3 id="claims-summary-heading" className="text-xs font-semibold text-dt-text">
+        <h3 id={headingId} className="text-xs font-semibold text-dt-text">
           Claims Summary
         </h3>
         <span className="text-2xs text-dt-text-tertiary">

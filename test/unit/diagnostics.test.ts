@@ -21,10 +21,10 @@ describe('signature diagnostics', () => {
   it('never reports a present signature as verified', () => {
     const check = checks(jwt({ exp: seconds(NOW) + 3600 })).get('signature');
     expect(check?.severity).toBe('info');
-    expect(check?.description).toBe('Signature present — not verified');
+    expect(check?.description).toBe('Signature present, not verified');
     expect(check?.details).toMatch(/does not verify/);
     expect(getSignatureState(buildToken(jwt({}), NOW))).toBe('not-verified');
-    expect(describeSignatureState('not-verified')).toBe('Signature present — not verified');
+    expect(describeSignatureState('not-verified')).toBe('Signature present, not verified');
   });
 
   it('flags alg none as unsigned', () => {

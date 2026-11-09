@@ -1,4 +1,4 @@
-# CLAUDE.md — TokenLens engineering guide
+# CLAUDE.md: TokenLens engineering guide
 
 Rules for anyone, human or AI assistant, who changes TokenLens. Read it before touching code.
 Details live in the documents it points to: `README.md` (features, usage, commands),
@@ -10,13 +10,15 @@ setup) and `docs/decisions/` (ADRs).
 TokenLens is a Manifest V3 Chrome DevTools extension. It adds a *TokenLens* tab that observes the
 inspected page's network traffic while DevTools is open, extracts `Authorization: Bearer`
 credentials, decodes JWTs locally, correlates each token with the requests that carried it, and
-shows temporal diagnostics. Everything runs inside the browser; nothing is transmitted anywhere.
+shows temporal diagnostics. A Decoder section decodes a pasted token without any captured traffic.
+Everything runs inside the browser; nothing is transmitted anywhere.
 
-Three sections exist and are fully functional: **Overview** (token inventory and selected-token
-inspector), **Requests** (every captured Bearer request) and **Timeline** (every token event,
-observed events distinguished from claim-derived ones). Storage inspection, OAuth/OIDC flow
-inspection, signature verification, JWKS retrieval and a separate diagnostics dashboard are **not
-implemented and must not be advertised**. No placeholder navigation, "coming soon" entries or
+Four sections exist and are fully functional: **Overview** (token inventory and selected-token
+inspector), **Requests** (every captured Bearer request), **Timeline** (every token event,
+observed events distinguished from claim-derived ones) and **Decoder** (manual, local decoding of
+a pasted JWT with token-only diagnostics, isolated from capture). Storage inspection, OAuth/OIDC flow
+inspection, signature verification, JWKS retrieval, JWE decryption, key input, token generation or
+re-signing and a separate diagnostics dashboard are **not implemented and must not be advertised**. No placeholder navigation, "coming soon" entries or
 interactive-looking stubs.
 
 Stack: TypeScript, React 19, Vite + CRXJS, Tailwind CSS 4, Zustand, TanStack Table/Virtual,
@@ -27,9 +29,9 @@ Testing Library, Playwright, axe-core.
 
 | Layer | Location | Must not |
 | --- | --- | --- |
-| Core (pure logic: JWT, diagnostics, capture relay, session reducer, protocol, synthetic fixtures) | `src/core/**` | import React, Zustand or DOM-only APIs (`atob`, `TextDecoder`, `BroadcastChannel` only behind interfaces) |
+| Core (pure logic: JWT, manual-input normalisation, diagnostics, capture relay, session reducer, protocol, synthetic fixtures) | `src/core/**` | import React, Zustand or DOM-only APIs (`atob`, `TextDecoder`, `BroadcastChannel` only behind interfaces) |
 | Capture service (DevTools-page relay) | `src/core/capture/relay.ts`, run by `src/devtools/devtools.ts` | touch UI state; retain any header other than the Bearer value |
-| State (capture store, UI preferences, clock, cross-section actions) | `src/state/**` | hold business rules that belong in `core` |
+| State (capture store, decoder store, UI preferences, clock, cross-section actions) | `src/state/**` | hold business rules that belong in `core` |
 | Hooks (connect panel to relay, derive filtered views) | `src/hooks/**` | hold capture state of their own |
 | Components (presentation) | `src/devtools/panel/**` | decode tokens, compute diagnostics, call Chrome APIs directly |
 | Shared types and defaults | `src/types/index.ts` | contain logic |
@@ -41,7 +43,7 @@ Testing Library, Playwright, axe-core.
    `token.requestIds` agree; `verifyReferentialIntegrity()` returns `[]` after every transition.
 2. The session changes only through the pure functions in `src/core/capture/session.ts`. Requests
    and Timeline derive from that session and never copy it.
-3. Decoding is not verification. UI and diagnostics may say "Signature present — not verified",
+3. Decoding is not verification. UI and diagnostics may say "Signature present, not verified",
    "Unsigned", "Not measured"; never "verified", "valid signature", or invented JWKS data.
 4. `TokenStatus` is temporal only (`active` means "exp is in the future").
 5. Timeline events are observed (`captured`, `used-in-request`, `failed-request`) or claim-derived
@@ -49,12 +51,17 @@ Testing Library, Playwright, axe-core.
 6. Observations are idempotent per `(relayId, seq)`; replays never duplicate. Clearing keeps the
    cursor and drops token-bound view filters.
 7. Filters are per section: the toolbar Filters popover edits the Overview's token filter and is
-   shown only there; Requests and Timeline own their filters; the status bar describes the active
-   section.
+   shown only there; Requests and Timeline own their filters; the Decoder has none; the status bar
+   describes the active section (in the Decoder, the local decoding state).
 8. No raw credential in persisted preferences, layout storage, logs, toasts, error messages, test
    artifacts or screenshots. Previews show a short prefix only.
 9. `manifest.json` keeps `permissions: []`, no `host_permissions`, no background, no content
    scripts. `scripts/verify-manifest.mjs` checks the built manifest in CI and before release.
+10. The Decoder is isolated: pasted input lives only in `src/state/decoder-store.ts`, never becomes
+    a `Token`, request or event, never changes selection, filters, recording or counts, and is never
+    persisted. Diagnostics take a `DiagnosticSubject`, so reuse never needs a fabricated `Token`;
+    HTTP-evidence checks are not run for it. Capture Clear and Decoder *Clear input* affect only
+    their own data. A result that does not describe the current input is never shown as current.
 
 ## 3. Workflow for every change
 
@@ -94,7 +101,7 @@ verified in the real extension when it concerns capture or rendering inside DevT
 | `npm run build`, `npm run verify:manifest` | production `dist/`, manifest posture | build is required before any E2E |
 | `npm run test:e2e` | Playwright `panel-ui` + `extension` only | `panel-ui` = built `panel.html` fed through the real BroadcastChannel protocol; `extension` = unpacked extension in Chromium. A unit test pins this project selection. |
 | `npm run test:e2e:baselines` | `panel-ui` inside the pinned Playwright Docker image, updating `e2e/tests/__screenshots__/linux/` | `:check` compares only; `test/unit/toolchain.test.ts` keeps the image tag equal to `@playwright/test` |
-| `npm run test:e2e:devtools` | Playwright `devtools`, headed | real Chrome DevTools over CDP; the only proof of DevTools registration and `chrome.devtools.network` capture. Needs a desktop session; not in CI; run before every release |
+| `npm run test:e2e:devtools` | Playwright `devtools`, headed | real Chrome DevTools over CDP; the only proof of DevTools registration and `chrome.devtools.network` capture; its `e2e/.artifacts/` screenshots (all four sections) are what `docs/evidence/` is refreshed from. Needs a desktop session; not in CI; run before every release |
 | `npm run check` | typecheck + lint + test + build + manifest check | local equivalent of the CI quality job |
 
 Screenshots are compared strictly (`maxDiffPixels: 0`, `threshold: 0.1`) per platform. CI runs
@@ -110,7 +117,8 @@ folder, such as an extracted release ZIP.
 - Only the Bearer credential crosses the relay boundary; every other header is dropped in
   `harEntryToObservation`.
 - Persistence is limited to `tokenlens-preferences` and `tokenlens-layout` in `localStorage`,
-  validated with Zod on load.
+  validated with Zod on load. Decoder input and results are never persisted (no storage, URL,
+  IndexedDB or logs), and the token field keeps spell checking and autocorrection off.
 - Clipboard writes happen only from explicit user clicks, show feedback and handle failure.
 - No new permissions, host permissions, content scripts, background workers, remote scripts or
   `unsafe-eval`. Any change there needs an ADR and review.

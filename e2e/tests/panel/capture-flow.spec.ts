@@ -33,7 +33,7 @@ test.describe('panel UI (built panel.html, real BroadcastChannel protocol)', () 
 
     await expect(page.getByTestId('token-header-name')).toHaveText('access_token');
     await expect(page.getByTestId('token-header')).toContainText('JWT (Access)');
-    await expect(page.getByTestId('token-header')).toContainText('Signature present — not verified');
+    await expect(page.getByTestId('token-header')).toContainText('Signature present, not verified');
     await expect(page.getByTestId('token-header-preview')).toContainText('Bearer eyJhbGciOiJSUzI1…');
 
     const claims = page.getByTestId('claims-summary');
@@ -55,7 +55,7 @@ test.describe('panel UI (built panel.html, real BroadcastChannel protocol)', () 
     expect(statuses).toEqual(['200', '201', '403']);
 
     const diagnostics = page.getByTestId('diagnostics-panel');
-    await expect(diagnostics).toContainText('Signature present — not verified');
+    await expect(diagnostics).toContainText('Signature present, not verified');
     await expect(diagnostics).toContainText('RS256 (asymmetric)');
     await expect(diagnostics).toContainText('Not expired');
     await expect(diagnostics).toContainText('Not measured');
@@ -101,7 +101,7 @@ test.describe('panel UI (built panel.html, real BroadcastChannel protocol)', () 
     const noExpiry = tokenItemNamed(page, 'legacy.example.test');
     await noExpiry.click();
     await expect(page.getByTestId('token-header')).toContainText('No expiry');
-    await expect(page.getByTestId('diagnostics-panel')).toContainText('No exp claim — lifetime unknown');
+    await expect(page.getByTestId('diagnostics-panel')).toContainText('No exp claim, lifetime unknown');
 
     await page.getByLabel('Filter tokens').fill('ünïcødé');
     await expect(tokenItems(page)).toHaveCount(1);
@@ -206,12 +206,14 @@ test.describe('panel UI (built panel.html, real BroadcastChannel protocol)', () 
     await openPanel(page);
     await feedObservations(page, buildScenario().observations);
     const nav = page.getByRole('navigation', { name: 'Main sections' });
-    await expect(nav.getByRole('button')).toHaveText(['Overview', 'Requests', 'Timeline']);
+    await expect(nav.getByRole('button')).toHaveText(['Overview', 'Requests', 'Timeline', 'Decoder']);
     await expect(page.getByText(/Coming soon/)).toHaveCount(0);
     await nav.getByRole('button', { name: 'Requests' }).click();
     await expect(page.getByTestId('requests-explorer')).toBeVisible();
     await nav.getByRole('button', { name: 'Timeline' }).click();
     await expect(page.getByTestId('global-timeline')).toBeVisible();
+    await nav.getByRole('button', { name: 'Decoder' }).click();
+    await expect(page.getByTestId('decoder-workspace')).toBeVisible();
     await nav.getByRole('button', { name: 'Overview' }).click();
     await expect(page.getByTestId('token-header-name')).toHaveText('access_token');
     await page.getByRole('button', { name: 'Settings' }).click();

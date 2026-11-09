@@ -3,7 +3,8 @@
 TokenLens is a Chrome DevTools extension for inspecting JWT and Bearer tokens. It adds a
 **TokenLens** tab to DevTools that observes the inspected page's network traffic while DevTools is
 open, extracts `Authorization: Bearer` credentials, decodes JWTs locally, correlates each token with
-the requests that carried it, and runs temporal diagnostics. Nothing leaves the browser.
+the requests that carried it, and runs temporal diagnostics. A **Decoder** section decodes a token
+you paste, without any captured traffic. Nothing leaves the browser.
 
 **[Install TokenLens from the Chrome Web Store](https://chromewebstore.google.com/detail/tokenlens/clcfnoleecdldhmbfhjnidinflamflkg)**
 
@@ -41,6 +42,8 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 - **Timeline.** A chronological stream of events across all tokens: first observation, requests,
   failed requests and expiry transitions, filterable by token and event type. Events observed in
   traffic are distinguished from events placed from a token's own `iat`/`exp` claims.
+- **Decoder.** Paste a token and inspect it locally, with no captured traffic needed; see the
+  Decoder section below.
 - **Honest diagnostics.** Signature *present but not verified* or *unsigned*; algorithm context
   without calling anything secure; live `exp`/`nbf`/`iat` checks; missing `aud`/`iss`; `kid` shown
   without pretending to know the JWKS; clock skew reported as *not measured*; HTTP 401/403/5xx
@@ -48,7 +51,7 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 - **Live status.** Tokens move from Active to Expiring to Expired on their own deadlines.
 - **Bounded memory.** Configurable limits with consistent eviction (least-recently-seen tokens,
   oldest requests).
-- **Dark and light themes**, resizable columns, and a single-column layout for narrow panels.
+- **Dark and light themes**, resizable columns, and single-column layouts for narrow panels.
 
 ![TokenLens Overview inside Chrome DevTools, dark theme, synthetic tokens](docs/evidence/real-devtools-dark.png)
 
@@ -56,17 +59,57 @@ the requests that carried it, and runs temporal diagnostics. Nothing leaves the 
 
 ![Global timeline](docs/evidence/real-devtools-timeline.png)
 
+## <img src="docs/icons/decoder.svg" width="28" height="28" align="absmiddle" alt=""> Decoder
+
+The fourth section, **Decoder**, decodes a token you paste: one from a log, a test fixture or a bug
+report, or a captured one you want to look at on its own. It needs no captured traffic, works while
+recording is paused, and makes no network request.
+
+- **Paste it as you have it.** A compact JWT, with or without a `Bearer ` prefix (any case), with
+  surrounding whitespace or line breaks. The field keeps exactly what you typed; nothing inside the
+  token is repaired, so a wrapped or truncated token is reported as such, with a hint explaining
+  what looks wrong.
+- **Results as you type.** After a short pause the right-hand side shows the token type, algorithm,
+  signature state, issuer, audience, subject and live status (Active, Expiring, Expired, Not yet
+  active), then the **Header** and **Payload**, a claims summary and the same token diagnostics
+  captured tokens get. Expiry and not-before results keep updating while the section is open.
+- **Pretty or Raw, and copy.** Header and Payload each switch between a collapsible JSON tree and
+  the JSON exactly as it is encoded in the token, so key order, duplicate keys and large numbers
+  are never lost, and each copies what is shown. *Copy token* copies the credential without the
+  prefix; *Clear input* empties the field.
+- **Clear feedback when it is not a decodable JWT.** Malformed JWTs say which segment failed and
+  why; opaque tokens, encrypted JWE and tokens over 64 KiB are named as such (JWE is not decrypted,
+  large input is not truncated). While new input is still being decoded, the previous result is
+  dimmed and cannot be copied, so it is never mistaken for the new one.
+- **Kept apart from capture.** A pasted token never becomes a captured token, request or timeline
+  event, and never changes the selection, filters or counts. The capture *Clear* leaves the Decoder
+  alone, and *Clear input* touches nothing else. Capture keeps running while the Decoder is open.
+- **Not stored.** The input lives in the panel's memory only. It survives switching sections and
+  themes, and is gone when DevTools closes or reloads the panel after the inspected page navigates.
+
+As everywhere in TokenLens, decoding is not verification: the signature is reported as *present but
+not verified* or *unsigned*, and the Decoder does not verify signatures, take keys, fetch JWKS,
+decrypt tokens, or edit and re-sign claims.
+
+![Decoder with a pasted synthetic JWT, dark theme](docs/evidence/real-devtools-decoder-dark.png)
+
+![Decoder feedback for a malformed JWT](docs/evidence/real-devtools-decoder-invalid.png)
+
 ## <img src="docs/icons/privacy.svg" width="28" height="28" align="absmiddle" alt=""> Privacy and security
 
 - No telemetry, analytics, external requests, remote code, background worker, content scripts or
   host permissions. The manifest declares `permissions: []`.
 - Captured credentials stay in memory for the DevTools session. Only UI preferences and panel
   layout are persisted, and they are validated on load.
+- Decoder input is held in memory only, separately from captured data, and is never written to
+  storage, the URL or logs. Spell checking and autocorrection are off in the token field, so the
+  browser's enhanced spell check never sees it.
 - Only the Bearer value plus URL, method, status and timing cross from the DevTools page to the
   panel; cookies and all other headers are dropped at that boundary.
 - Claims are rendered as text with a bounded depth; nothing from a token is executed.
-- Copying a credential happens only on an explicit click and is confirmed with a toast.
-- Wording is deliberate: "decoded", "signature present — not verified", "unsigned". TokenLens does
+- Copying a credential or decoded JSON happens only on an explicit click and is confirmed with a
+  toast.
+- Wording is deliberate: "decoded", "signature present, not verified", "unsigned". TokenLens does
   not verify signatures or fetch JWKS, so "Active" means "not expired", not "trusted".
 - The full privacy policy is in [PRIVACY.md](PRIVACY.md).
 
@@ -104,10 +147,13 @@ DevTools extensions.
    click a column to sort, and click a token name to jump back to it in the Overview.
 4. **Timeline** shows all events newest first; filter by event type or token, and use *Open
    request* or the token link to navigate.
-5. The toolbar offers Recording / Paused, the theme toggle, Settings (theme, expiring threshold,
-   capture limits, clear on navigation) and Clear. In the Overview it also offers Filters for the
-   token list (search, status, quick filters, expired visibility); Requests and Timeline carry
-   their own filters in their headers, and the status bar reports the active section's filter.
+5. **Decoder**: paste a token into the field on the left and read the result on the right (see
+   *Decoder* above). Capture keeps running meanwhile.
+6. The toolbar offers Recording / Paused, the theme toggle, Settings (theme, expiring threshold,
+   capture limits, clear on navigation) and Clear (captured tokens and requests only). In the
+   Overview it also offers Filters for the token list (search, status, quick filters, expired visibility); Requests and Timeline carry
+   their own filters in their headers, and the status bar reports the active section's filter. In
+   the Decoder the status bar shows the local decoding state instead of capture counts.
 
 To try it without a real application: `npm run fixture:serve`, then open
 <http://127.0.0.1:4173/app/>; every button sends a synthetic token to a local endpoint that
@@ -122,8 +168,11 @@ answers 200, 201, 401, 403 or 500.
 - Signatures are not verified and JWKS are not fetched.
 - Clock skew is not measured because the extension has no independent time source.
 - Requests without a Bearer token are counted but not listed.
-- Chrome recreates the DevTools panel frame on page navigation. TokenLens resynchronises from the
-  relay in the DevTools page, so nothing is lost, but the detail tab you were on resets.
+- Chrome recreates the DevTools panel frame on page navigation. TokenLens resynchronises captured
+  data from the relay in the DevTools page, so nothing captured is lost, but the detail tab you were
+  on resets and so does the Decoder input, which is deliberately kept only in the panel's memory.
+- The Decoder decodes compact JWS tokens up to 64 KiB. It does not decrypt JWE, verify signatures,
+  accept keys or edit and re-sign claims.
 - Branded Google Chrome ignores `--load-extension`, so automated extension tests use Playwright's
   Chromium. Loading the unpacked extension manually works in any Chromium-based browser.
 

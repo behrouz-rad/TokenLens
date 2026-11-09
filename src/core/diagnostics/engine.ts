@@ -1,4 +1,4 @@
-import type { DiagnosticCheck, NetworkRequest, SignatureState, Token } from '@/types';
+import type { DiagnosticCheck, DiagnosticSubject, NetworkRequest, SignatureState } from '@/types';
 import { getAudienceClaim, getNumericDateClaim, getStringClaim } from '@/core/jwt/decoder';
 import { formatDistanceStrict } from 'date-fns';
 
@@ -19,7 +19,7 @@ function describeDistance(from: number, to: number): string {
   }
 }
 
-export function getSignatureState(token: Token): SignatureState {
+export function getSignatureState(token: Pick<DiagnosticSubject, 'decoded'>): SignatureState {
   const decoded = token.decoded;
   if (!decoded) return 'unsupported';
   const alg = typeof decoded.header.alg === 'string' ? decoded.header.alg : '';
@@ -30,7 +30,7 @@ export function getSignatureState(token: Token): SignatureState {
 export function describeSignatureState(state: SignatureState): string {
   switch (state) {
     case 'not-verified':
-      return 'Signature present — not verified';
+      return 'Signature present, not verified';
     case 'unsigned':
       return 'Unsigned';
     case 'unsupported':
@@ -38,7 +38,7 @@ export function describeSignatureState(state: SignatureState): string {
   }
 }
 
-function signatureCheck(token: Token): DiagnosticCheck {
+function signatureCheck(token: DiagnosticSubject): DiagnosticCheck {
   const decoded = token.decoded;
   const alg = typeof decoded?.header.alg === 'string' ? decoded.header.alg : '';
   const algIsNone = alg.toLowerCase() === 'none';
@@ -73,13 +73,13 @@ function signatureCheck(token: Token): DiagnosticCheck {
   return {
     id: 'signature',
     label: 'Signature',
-    description: 'Signature present — not verified',
+    description: 'Signature present, not verified',
     details: 'TokenLens does not verify signatures. A present signature is not evidence of authenticity.',
     severity: 'info',
   };
 }
 
-function algorithmCheck(token: Token): DiagnosticCheck {
+function algorithmCheck(token: DiagnosticSubject): DiagnosticCheck {
   const alg = token.decoded?.header.alg;
   if (typeof alg !== 'string' || alg.length === 0) {
     return {
@@ -121,7 +121,7 @@ function algorithmCheck(token: Token): DiagnosticCheck {
   };
 }
 
-function expirationCheck(token: Token, now: number, expiringThresholdMs: number): DiagnosticCheck {
+function expirationCheck(token: DiagnosticSubject, now: number, expiringThresholdMs: number): DiagnosticCheck {
   const decoded = token.decoded;
   if (!decoded) {
     return { id: 'expiration', label: 'Expiration (exp)', description: 'Not evaluated (no claims)', severity: 'info' };
@@ -134,7 +134,7 @@ function expirationCheck(token: Token, now: number, expiringThresholdMs: number)
     return {
       id: 'expiration',
       label: 'Expiration (exp)',
-      description: 'No exp claim — lifetime unknown',
+      description: 'No exp claim, lifetime unknown',
       details: 'Expiration was not evaluated. Tokens without exp never expire on their own.',
       severity: 'warning',
     };
@@ -151,10 +151,10 @@ function expirationCheck(token: Token, now: number, expiringThresholdMs: number)
   if (exp.ms - now <= expiringThresholdMs) {
     return { id: 'expiration', label: 'Expiration (exp)', description: `Expires in ${remaining}`, severity: 'warning' };
   }
-  return { id: 'expiration', label: 'Expiration (exp)', description: `Not expired — expires in ${remaining}`, severity: 'success' };
+  return { id: 'expiration', label: 'Expiration (exp)', description: `Not expired, expires in ${remaining}`, severity: 'success' };
 }
 
-function notBeforeCheck(token: Token, now: number): DiagnosticCheck | null {
+function notBeforeCheck(token: DiagnosticSubject, now: number): DiagnosticCheck | null {
   const decoded = token.decoded;
   if (!decoded) return null;
   const nbf = getNumericDateClaim(decoded.payload, 'nbf');
@@ -173,7 +173,7 @@ function notBeforeCheck(token: Token, now: number): DiagnosticCheck | null {
   return { id: 'not-before', label: 'Not before (nbf)', description: 'Not-before time has passed', severity: 'success' };
 }
 
-function issuedAtCheck(token: Token, now: number): DiagnosticCheck {
+function issuedAtCheck(token: DiagnosticSubject, now: number): DiagnosticCheck {
   const decoded = token.decoded;
   if (!decoded) {
     return { id: 'issued-at', label: 'Issued at (iat)', description: 'Not evaluated (no claims)', severity: 'info' };
@@ -212,7 +212,7 @@ function issuedAtCheck(token: Token, now: number): DiagnosticCheck {
   };
 }
 
-function audienceCheck(token: Token): DiagnosticCheck {
+function audienceCheck(token: DiagnosticSubject): DiagnosticCheck {
   const decoded = token.decoded;
   const audience = decoded ? getAudienceClaim(decoded.payload) : null;
   if (decoded && 'aud' in decoded.payload && audience === null) {
@@ -236,7 +236,7 @@ function audienceCheck(token: Token): DiagnosticCheck {
   };
 }
 
-function issuerCheck(token: Token): DiagnosticCheck {
+function issuerCheck(token: DiagnosticSubject): DiagnosticCheck {
   const decoded = token.decoded;
   if (decoded && 'iss' in decoded.payload && typeof decoded.payload.iss !== 'string') {
     return { id: 'issuer', label: 'Issuer (iss)', description: 'iss has an invalid type', severity: 'error' };
@@ -254,7 +254,7 @@ function issuerCheck(token: Token): DiagnosticCheck {
   };
 }
 
-function keyIdCheck(token: Token): DiagnosticCheck | null {
+function keyIdCheck(token: DiagnosticSubject): DiagnosticCheck | null {
   const kid = token.decoded?.header.kid;
   if (typeof kid !== 'string') return null;
   return {
@@ -274,7 +274,7 @@ const CLOCK_SKEW_CHECK: DiagnosticCheck = {
   severity: 'info',
 };
 
-function claimIssueChecks(token: Token): DiagnosticCheck[] {
+function claimIssueChecks(token: DiagnosticSubject): DiagnosticCheck[] {
   return (token.decoded?.issues ?? []).map((issue) => ({
     id: `claim-${issue.claim}`,
     label: `Claim "${issue.claim}"`,
@@ -283,7 +283,11 @@ function claimIssueChecks(token: Token): DiagnosticCheck[] {
   }));
 }
 
-export function runDiagnostics(token: Token, now: number, expiringThresholdMs: number): DiagnosticCheck[] {
+/**
+ * Token-only checks. They read nothing but the decoded token, so a captured token and a manually
+ * decoded one are evaluated by the same rules.
+ */
+export function runDiagnostics(token: DiagnosticSubject, now: number, expiringThresholdMs: number): DiagnosticCheck[] {
   if (token.format === 'opaque') {
     return [
       {

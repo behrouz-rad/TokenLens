@@ -135,7 +135,7 @@ describe('inspector components', () => {
       selectTokenByRaw(FIXTURE.access);
       renderWithStores(<DiagnosticsPanel />);
       const panel = screen.getByTestId('diagnostics-panel');
-      expect(within(panel).getByText('Signature present — not verified')).toBeInTheDocument();
+      expect(within(panel).getByText('Signature present, not verified')).toBeInTheDocument();
       expect(within(panel).getByText('Not measured')).toBeInTheDocument();
       expect(within(panel).getByText('RS256 (asymmetric)')).toBeInTheDocument();
       expect(within(panel).getByText('kid-1')).toBeInTheDocument();
@@ -164,7 +164,7 @@ describe('inspector components', () => {
       renderWithStores(<TokenHeader />);
       expect(screen.getByTestId('token-header-preview')).toHaveTextContent('Bearer eyJhbGciOiJSUzI1…');
       expect(screen.getByTestId('token-header-preview').textContent).not.toContain(FIXTURE.access);
-      expect(screen.getByText('Signature present — not verified')).toBeInTheDocument();
+      expect(screen.getByText('Signature present, not verified')).toBeInTheDocument();
       expect(screen.getByText('JWT (Access)')).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Copy Bearer token' }));
       expect(await navigator.clipboard.readText()).toBe(`Bearer ${FIXTURE.access}`);

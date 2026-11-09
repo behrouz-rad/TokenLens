@@ -29,7 +29,7 @@ text is listed too. Every clip is checked by transcribing it with Whisper
 - **"live status counting down to expiry"**: status is temporal only and updates on its own
   deadline. *Active* means "not expired", not "trusted".
 - **"decode it locally"**: decoding happens in the panel, and nothing is transmitted.
-- **"say what was not verified"**: the diagnostics show *Signature present — not verified*,
+- **"say what was not verified"**: the diagnostics show *Signature present, not verified*,
   *Present. Whether it matches the receiving API was not checked*, and clock skew *Not measured*.
   The video never claims verification.
 - **"issue and expiry times from each token's claims"**: Timeline marks these as *CLAIM* events,

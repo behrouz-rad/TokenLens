@@ -69,6 +69,9 @@ export interface Token {
   requestIds: string[];
 }
 
+/** The fields of a token that diagnostics and temporal status depend on; no capture identity or request evidence. */
+export type DiagnosticSubject = Pick<Token, 'format' | 'decoded' | 'formatDetail'>;
+
 export interface NetworkRequest {
   id: string;
   url: string;
@@ -106,7 +109,7 @@ export interface TokenFilter {
   quickFilter: QuickFilterType | null;
 }
 
-export type MainTab = 'overview' | 'requests' | 'timeline';
+export type MainTab = 'overview' | 'requests' | 'timeline' | 'decoder';
 
 /** HTTP status class used by the Requests explorer; responses outside 200–599 (e.g. status 0) fall in none of them. */
 export type RequestStatusCategory = '2xx' | '3xx' | '4xx' | '5xx';

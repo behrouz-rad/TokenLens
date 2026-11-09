@@ -73,6 +73,10 @@ test.describe('installed extension (persistent Chromium context)', () => {
     await expect(page.getByTestId('status-token-count')).toHaveText('Captured 8 tokens');
     await page.getByRole('button', { name: 'Switch to light theme' }).click();
     await page.getByRole('tab', { name: 'Raw' }).click();
+    await page.getByRole('navigation', { name: 'Main sections' }).getByRole('button', { name: 'Decoder' }).click();
+    await page.getByRole('textbox', { name: 'Token input' }).fill(`Bearer ${buildScenario().tokens.access}`);
+    await expect(page.getByTestId('decoder-token-type')).toHaveText('JWT (Access)');
+    await expect(page.getByTestId('status-decoder-state')).toHaveText('JWT decoded · signature not verified');
     expect(external).toEqual([]);
     await page.close();
   });

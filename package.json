@@ -2,7 +2,7 @@
   "name": "tokenlens",
   "private": true,
   "version": "1.0.0",
-  "description": "TokenLens — JWT and Bearer token inspection for Chrome DevTools",
+  "description": "TokenLens: JWT and Bearer token inspection for Chrome DevTools",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"

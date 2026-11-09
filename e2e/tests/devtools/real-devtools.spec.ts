@@ -6,9 +6,11 @@ import {
   ensurePanelView,
   launchDevtoolsSession,
   visibleDevtoolsTabs,
+  waitForEvaluation,
   waitForTarget,
   type DevtoolsSession,
 } from '../../support/devtools';
+import { createSyntheticJwt } from '@/core/testing/synthetic';
 
 /**
  * Tests the real thing: Chrome DevTools opened on the fixture app, the TokenLens tab registered by
@@ -28,6 +30,7 @@ const NO_RUNNING_ANIMATIONS = `document.getAnimations().filter(a => a.playState 
 test.describe('TokenLens inside real Chrome DevTools', () => {
   let session: DevtoolsSession;
   let devtools: string;
+  let devtoolsTargetId: string;
   let panel: string | null = null;
   let panelTargetId: string | null = null;
   let panelRecreations = 0;
@@ -81,6 +84,7 @@ test.describe('TokenLens inside real Chrome DevTools', () => {
     await session.page.goto(`${baseURL}/app/`);
     await session.page.waitForSelector('body[data-fixture-ready="true"]');
     const devtoolsTarget = await waitForTarget(session.cdp, (t) => t.url.startsWith('devtools://'));
+    devtoolsTargetId = devtoolsTarget.targetId;
     devtools = await session.cdp.attach(devtoolsTarget);
   });
 
@@ -94,9 +98,12 @@ test.describe('TokenLens inside real Chrome DevTools', () => {
     const devtoolsPage = await waitForTarget(session.cdp, (t) => t.url.includes('/src/devtools/devtools.html'));
     expect(devtoolsPage.url).toMatch(/^chrome-extension:\/\/[a-p]{32}\/src\/devtools\/devtools\.html$/);
     const extensionPage = await session.cdp.attach(devtoolsPage);
-    const relay = await session.cdp.evaluate<{ relay: boolean; tabId: number }>(
+    // The target is listed before its module script has run, so the relay is awaited rather than read once.
+    const relay = await waitForEvaluation<{ relay: boolean; tabId: number }>(
+      session.cdp,
       extensionPage,
-      `({ relay: !!window.__tokenlensRelay, tabId: chrome.devtools.inspectedWindow.tabId })`
+      `({ relay: !!window.__tokenlensRelay, tabId: chrome.devtools.inspectedWindow.tabId })`,
+      (value) => value.relay
     );
     expect(relay.relay).toBe(true);
     expect(relay.tabId).toBeGreaterThan(0);
@@ -131,7 +138,7 @@ test.describe('TokenLens inside real Chrome DevTools', () => {
     expect(await pe<string>(q('[data-testid=token-header-name]'))).toBe('access_token');
     const header = await pe<string>(q('[data-testid=token-header]'));
     expect(header).toContain('JWT (Access)');
-    expect(header).toContain('Signature present — not verified');
+    expect(header).toContain('Signature present, not verified');
     expect(header).toContain('https://issuer.fixture.test');
 
     const table = await pe<string>(q('[data-testid=request-table]'));
@@ -194,6 +201,76 @@ test.describe('TokenLens inside real Chrome DevTools', () => {
     expect(joined).not.toContain('user-expired');
     expect(await pe<string>(q('[data-testid=quick-filter-count-only-expired]'))).toBe('1');
     expect(await pe<string>(q('[data-testid=quick-filter-count-failed-requests]'))).toBe('3');
+  });
+
+  test('the Decoder decodes pasted input inside DevTools and leaves the capture session alone', async () => {
+    const seconds = Math.floor(Date.now() / 1000);
+    const token = createSyntheticJwt(
+      { alg: 'RS256', typ: 'at+jwt', kid: 'decoder-key-1' },
+      { iss: 'https://issuer.decoder.test', sub: 'decoder-user', aud: 'api://decoder', exp: seconds + 3600, iat: seconds - 120, scope: 'read write', profile: { name: 'Zoë 🔐 東京', roles: ['viewer', 'editor'] } }
+    );
+    const capturedBefore = await pe<string>(q('[data-testid=status-token-count]'));
+    const requestsBefore = await pe<string>(q('[data-testid=status-request-count]'));
+    const decoderState = q('[data-testid=status-decoder-state]');
+    // execCommand('insertText') goes through the browser's editing pipeline, so React sees a native input event, as with a paste.
+    const enter = (text: string) =>
+      pe<boolean>(
+        `(() => { const el = document.querySelector('[data-testid=decoder-input]'); el.focus(); el.select(); const ok = document.execCommand('insertText', false, ${JSON.stringify(text)}); el.blur(); return ok; })()`
+      );
+
+    expect(await clickByText('button', 'Decoder')).toBe(true);
+    await waitPanel<string>(decoderState, (v) => v === 'Waiting for input');
+    expect(await pe<string>(q('[data-testid=decoder-output]'))).toContain('Paste a JWT to inspect its header and payload.');
+    expect(await enter(`Bearer ${token}`)).toBe(true);
+    await waitPanel<string>(decoderState, (v) => v === 'JWT decoded · signature not verified');
+    expect(await pe<string>(q('[data-testid=decoder-token-type]'))).toBe('JWT (Access)');
+    expect(await pe<string>(q('[data-testid=decoder-facts]'))).toContain('Signature present, not verified');
+    expect(await pe<string>(q('[data-testid=decoded-payload]'))).toContain('Zoë 🔐 東京');
+    expect(await pe<string>(q('[data-testid=decoder-diagnostics]'))).not.toContain('HTTP');
+    await waitPanel<number>(NO_RUNNING_ANIMATIONS, (v) => v === 0);
+    await session.cdp.screenshot(devtools, join(ARTIFACTS, 'real-devtools-decoder-dark.png'));
+
+    expect(await clickByText('button', 'Switch to light theme')).toBe(true);
+    await waitPanel<boolean>(`document.documentElement.classList.contains('light')`, (v) => v === true);
+    await waitPanel<number>(NO_RUNNING_ANIMATIONS, (v) => v === 0);
+    await session.cdp.screenshot(devtools, join(ARTIFACTS, 'real-devtools-decoder-light.png'));
+    expect(await clickByText('button', 'Switch to dark theme')).toBe(true);
+    await waitPanel<boolean>(`document.documentElement.classList.contains('dark')`, (v) => v === true);
+
+    expect(await enter('eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJicm9rZW4.!!!')).toBe(true);
+    await waitPanel<string>(decoderState, (v) => v === 'Malformed JWT');
+    expect(await pe<string>(q('[data-testid=decoder-feedback]'))).toContain('Payload segment is not valid JSON');
+    expect(await pe<number>(count('[data-testid=decoded-payload]'))).toBe(0);
+    await waitPanel<number>(NO_RUNNING_ANIMATIONS, (v) => v === 0);
+    await session.cdp.screenshot(devtools, join(ARTIFACTS, 'real-devtools-decoder-invalid.png'));
+
+    expect(await enter(token)).toBe(true);
+    await waitPanel<string>(decoderState, (v) => v === 'JWT decoded · signature not verified');
+    const devtoolsWindow = (await session.cdp.send('Browser.getWindowForTarget', { targetId: devtoolsTargetId })).result as { windowId: number; bounds: Record<string, unknown> };
+    await session.cdp.send('Browser.setWindowBounds', { windowId: devtoolsWindow.windowId, bounds: { width: 560 } });
+    try {
+      await waitPanel<string | null>(`document.querySelector('[data-testid=decoder-workspace]')?.dataset.layout ?? null`, (v) => v === 'narrow');
+      const overflow = await pe<number>(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
+      expect(overflow).toBeLessThanOrEqual(0);
+      const navVisible = await pe<boolean>(
+        `[...document.querySelectorAll('nav[aria-label="Main sections"] button')].every((b) => { const r = b.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth; })`
+      );
+      expect(navVisible).toBe(true);
+      await waitPanel<number>(NO_RUNNING_ANIMATIONS, (v) => v === 0);
+      await session.cdp.screenshot(devtools, join(ARTIFACTS, 'real-devtools-decoder-narrow.png'));
+    } finally {
+      await session.cdp.send('Browser.setWindowBounds', { windowId: devtoolsWindow.windowId, bounds: { width: devtoolsWindow.bounds.width } });
+    }
+    await waitPanel<string | null>(`document.querySelector('[data-testid=decoder-workspace]')?.dataset.layout ?? null`, (v) => v === 'wide');
+
+    expect(await clickByText('button', 'Overview')).toBe(true);
+    await waitPanel<string>(q('[data-testid=status-token-count]'), (v) => typeof v === 'string');
+    expect(await pe<string>(q('[data-testid=status-token-count]'))).toBe(capturedBefore);
+    expect(await pe<string>(q('[data-testid=status-request-count]'))).toBe(requestsBefore);
+    expect(await clickByText('button', 'Decoder')).toBe(true);
+    await waitPanel<string>(decoderState, (v) => v === 'JWT decoded · signature not verified');
+    expect(await pe<string>(`document.querySelector('[data-testid=decoder-input]').value`)).toBe(token);
+    expect(await clickByText('button', 'Overview')).toBe(true);
   });
 
   test('controls work inside DevTools: selection, filters, pause/resume, theme, clear', async () => {

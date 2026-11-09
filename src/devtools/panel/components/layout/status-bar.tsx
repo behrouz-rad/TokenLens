@@ -8,8 +8,37 @@ import { cn } from '@/lib/cn';
 import { pluralize } from '@/lib/format';
 import { Trash } from 'lucide-react';
 import { clearCaptureWithFeedback } from '@/state/capture-actions';
+import { isDecoderResultStale, useDecoderStore } from '@/state/decoder-store';
+import { summarizeInspection } from '../../features/decoder/decoder-labels';
 
+const FOOTER_CLASS = 'flex h-6 shrink-0 items-center gap-3 overflow-hidden border-t border-dt-border bg-dt-bg-secondary px-3 text-2xs text-dt-text-tertiary';
+
+/**
+ * The Decoder works on pasted input, not on captured traffic, so in that section the bar reports
+ * the local decoding state instead of capture counts and capture filters.
+ */
 export function StatusBar() {
+  const activeMainTab = useUIStore((s) => s.activeMainTab);
+  return activeMainTab === 'decoder' ? <DecoderStatusBar /> : <CaptureStatusBar />;
+}
+
+function DecoderStatusBar() {
+  const inspection = useDecoderStore((s) => s.inspection);
+  const stale = useDecoderStore(isDecoderResultStale);
+  return (
+    <footer className={FOOTER_CLASS} aria-label="Decoder status">
+      <span data-testid="status-decoder-scope" className="truncate">
+        Decoder · local only, not added to the capture session
+      </span>
+      <div className="flex-1" />
+      <span data-testid="status-decoder-state" className="truncate">
+        {stale ? 'Decoding…' : summarizeInspection(inspection).state}
+      </span>
+    </footer>
+  );
+}
+
+function CaptureStatusBar() {
   const requests = useCaptureStore((s) => s.session.requests);
   const tokens = useCaptureStore((s) => s.session.tokens);
   const counters = useCaptureStore((s) => s.session.counters);
@@ -33,10 +62,7 @@ export function StatusBar() {
   const observedWithoutToken = Math.max(0, counters.observedRequests - stats.total - counters.evictedRequests);
 
   return (
-    <footer
-      className="flex h-6 shrink-0 items-center gap-3 overflow-hidden border-t border-dt-border bg-dt-bg-secondary px-3 text-2xs text-dt-text-tertiary"
-      aria-label="Capture summary"
-    >
+    <footer className={FOOTER_CLASS} aria-label="Capture summary">
       <span data-testid="status-token-count">Captured {pluralize(tokens.size, 'token')}</span>
       <Divider />
       <span data-testid="status-request-count" title={`${observedWithoutToken} observed requests carried no Bearer token`}>
