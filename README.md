@@ -164,7 +164,7 @@ answers 200, 201, 401, 403 or 500.
 - Only traffic observed after DevTools opened is visible, and only what the
   `chrome.devtools.network` API reports for the inspected page (requests completed while DevTools
   is open; other tabs and most service-worker traffic are outside its scope). That is a DevTools
-  platform limit.
+  platform limit. A request is listed once it completes or fails, not while it is still in flight.
 - Signatures are not verified and JWKS are not fetched.
 - Clock skew is not measured because the extension has no independent time source.
 - Requests without a Bearer token are counted but not listed.

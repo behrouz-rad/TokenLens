@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractAuthorization, harEntryKey, harEntryToObservation } from '@/core/capture/observation';
+import { extractAuthorization, harEntryKey, harEntryToObservation, isHarEntryInFlight } from '@/core/capture/observation';
 
 describe('extractAuthorization', () => {
   it('extracts Bearer tokens case-insensitively from header name and scheme', () => {
@@ -67,9 +67,32 @@ describe('harEntryKey', () => {
   it('prefers the private request id and otherwise builds a composite key', () => {
     expect(harEntryKey({ _requestId: '123.4' })).toBe('id:123.4');
     const entry = { startedDateTime: 't', time: 1, _connectionId: '42', request: { method: 'GET', url: 'u' }, response: { status: 200 } };
-    expect(harEntryKey(entry)).toBe('t|42|GET|u|200|1');
-    expect(harEntryKey({ ...entry, _connectionId: undefined, connection: '7' })).toBe('t|7|GET|u|200|1');
+    expect(harEntryKey(entry)).toBe('t|42|GET|u|200||1');
+    expect(harEntryKey({ ...entry, _connectionId: undefined, connection: '7' })).toBe('t|7|GET|u|200||1');
     expect(harEntryKey({ ...entry, time: 2 })).not.toBe(harEntryKey(entry));
     expect(harEntryKey({ ...entry, _connectionId: '43' })).not.toBe(harEntryKey(entry));
+  });
+
+  it('stays the same while a completed response finishes loading, and separates distinct requests', () => {
+    const phases = { blocked: 44.78, _blocked_queueing: 44.28, dns: -1, connect: -1, ssl: -1, send: 0.08, wait: 12.65 };
+    const early = { startedDateTime: 't', time: 59.4, _connectionId: '137', request: { method: 'GET', url: 'u' }, response: { status: 200, _error: null }, timings: { ...phases, receive: 1.89 } };
+    const final = { ...early, time: 58.06, timings: { ...phases, receive: 0.55 } };
+    expect(harEntryKey(final)).toBe(harEntryKey(early));
+    expect(harEntryKey({ ...final, timings: { ...phases, blocked: 58.11, receive: 0.55 } })).not.toBe(harEntryKey(final));
+    expect(harEntryKey({ ...final, response: { status: 401, _error: null } })).not.toBe(harEntryKey(final));
+    const refused = { startedDateTime: 't', time: 6.2, request: { method: 'GET', url: 'u' }, response: { status: 0, _error: 'net::ERR_CONNECTION_REFUSED' }, timings: { blocked: 0, send: 0, wait: 0, receive: 0 } };
+    expect(harEntryKey({ ...refused, time: 7.9 })).not.toBe(harEntryKey(refused));
+  });
+});
+
+describe('isHarEntryInFlight', () => {
+  it('recognises in-flight entries without mistaking failed, cancelled or blocked requests for them', () => {
+    const request = { method: 'GET', url: 'u' };
+    expect(isHarEntryInFlight({ time: 0, request, response: { status: 0, statusText: '', _error: null } })).toBe(true);
+    expect(isHarEntryInFlight({ time: 0, request, response: {} })).toBe(true);
+    expect(isHarEntryInFlight({ time: 6.2, request, response: { status: 0, _error: 'net::ERR_CONNECTION_REFUSED' } })).toBe(false);
+    expect(isHarEntryInFlight({ time: 702.9, request, response: { status: 0, _error: 'net::ERR_ABORTED' } })).toBe(false);
+    expect(isHarEntryInFlight({ time: 82.9, request, response: { status: 200, _error: 'net::ERR_FAILED' } })).toBe(false);
+    expect(isHarEntryInFlight({ time: 58.1, request, response: { status: 200, _error: null } })).toBe(false);
   });
 });
