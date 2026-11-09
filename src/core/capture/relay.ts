@@ -1,5 +1,5 @@
 import type { MessagePort, CaptureMessage } from './channel';
-import { harEntryKey, harEntryToObservation, type CaptureObservation, type HarEntryLike } from './observation';
+import { harEntryKey, harEntryToObservation, isHarEntryInFlight, type CaptureObservation, type HarEntryLike } from './observation';
 
 export interface DevtoolsNetworkApi {
   addRequestListener(listener: (entry: HarEntryLike) => void): void;
@@ -35,19 +35,26 @@ export interface RelayOptions {
  * starts the moment DevTools opens rather than when the TokenLens tab is first shown. The panel
  * can mount, unmount, or reload as often as it likes and resynchronise from the replay buffer.
  *
- * Two browser limitations shape this class:
+ * Three browser limitations shape this class:
  *  - chrome.devtools.network only knows about traffic recorded after DevTools opened. Nothing
  *    earlier can be reconstructed.
  *  - In practice `onRequestFinished` is not delivered for every request DevTools records (observed
  *    in Chromium 156: requests made before the first navigation after DevTools opened never fire
  *    the event, although getHAR() returns them). The relay therefore reconciles against getHAR()
  *    on a timer and treats the two sources as one stream, de-duplicated by request key.
+ *  - getHAR() also lists requests that have not finished: in flight (no status, no duration) and,
+ *    briefly, with a response whose loading has not finished (its duration still changes). In-flight
+ *    entries are skipped until they complete or fail. A completed entry first seen in a poll is
+ *    emitted once onRequestFinished delivers it or a later poll reports it unchanged, so each
+ *    request is emitted once, with its final values.
  */
 export class CaptureRelay {
   private readonly buffer: CaptureObservation[] = [];
   private readonly outbox: CaptureObservation[] = [];
   private readonly seenKeys = new Set<string>();
   private readonly seenKeyOrder: string[] = [];
+  /** Completed entries seen in one poll, waiting for onRequestFinished or an unchanged next poll. */
+  private readonly unconfirmed = new Map<string, HarEntryLike>();
   private readonly now: () => number;
   private readonly bufferSize: number;
   private readonly flushIntervalMs: number;
@@ -126,6 +133,7 @@ export class CaptureRelay {
   /** Emits the entry unless an identical request key was already emitted (live or polled). */
   private admit(entry: HarEntryLike): boolean {
     const key = harEntryKey(entry);
+    this.unconfirmed.delete(key);
     if (this.seenKeys.has(key)) return false;
     this.seenKeys.add(key);
     this.seenKeyOrder.push(key);
@@ -149,17 +157,38 @@ export class CaptureRelay {
   private async poll(): Promise<void> {
     if (!this.started || this.polling) return;
     this.polling = true;
+    // A failed call says nothing about the log, so it must not look like an emptied one.
     const entries = await this.options.api
       .getHar()
       .then((log) => (Array.isArray(log.entries) ? log.entries : []))
-      .catch((): HarEntryLike[] => []);
+      .catch((): null => null);
     this.polling = false;
     if (!this.started) return;
-    for (const entry of entries) {
-      if (this.admit(entry)) this.polledEntryCount += 1;
-    }
-    const slow = entries.length >= this.harPollSlowThreshold;
+    if (entries) this.reconcile(entries);
+    const slow = (entries?.length ?? 0) >= this.harPollSlowThreshold;
     this.schedulePoll(slow ? this.harPollSlowIntervalMs : this.harPollIntervalMs);
+  }
+
+  /** Emits each polled request once it is final; see the class comment for the snapshot stages. */
+  private reconcile(entries: readonly HarEntryLike[]): void {
+    const listed = new Set<string>();
+    for (const entry of entries) {
+      if (isHarEntryInFlight(entry)) continue;
+      const key = harEntryKey(entry);
+      listed.add(key);
+      if (this.seenKeys.has(key)) continue;
+      const earlier = this.unconfirmed.get(key);
+      // A failure is final when first reported; a response is final once its duration stops changing.
+      if (entry.response?._error || (earlier !== undefined && earlier.time === entry.time)) {
+        if (this.admit(entry)) this.polledEntryCount += 1;
+      } else {
+        this.unconfirmed.set(key, entry);
+      }
+    }
+    // An entry that left the log (cleared on navigation) is never reported again: emit its last snapshot rather than lose the request.
+    for (const [key, entry] of this.unconfirmed) {
+      if (!listed.has(key) && this.admit(entry)) this.polledEntryCount += 1;
+    }
   }
 
   private enqueue(observation: CaptureObservation): void {
