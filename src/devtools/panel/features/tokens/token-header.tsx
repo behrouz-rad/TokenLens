@@ -7,6 +7,7 @@ import { describeSignatureState, getSignatureState } from '@/core/diagnostics/en
 import { copyToClipboard } from '@/lib/clipboard';
 import { formatExpiryCompact, previewSecret } from '@/lib/format';
 import { StatusBadge } from '../../components/ui/status-badge';
+import { Meta } from './token-meta';
 import { Copy, Clock } from 'lucide-react';
 
 export function TokenHeader() {
@@ -69,15 +70,6 @@ export function TokenHeader() {
         <Meta label="Algorithm" value={algorithm} />
         <Meta label="Signature" value={describeSignatureState(signatureState)} tone={signatureState === 'unsigned' ? 'error' : 'neutral'} />
       </dl>
-    </div>
-  );
-}
-
-function Meta({ label, value, title, tone = 'neutral' }: { label: string; value: string | null; title?: string; tone?: 'neutral' | 'error' }) {
-  return (
-    <div className="flex min-w-0 max-w-full items-center gap-1" title={title ?? value ?? undefined}>
-      <dt className="font-medium uppercase">{label}</dt>
-      <dd className={tone === 'error' ? 'truncate text-dt-error' : 'truncate text-dt-text-secondary'}>{value ?? '—'}</dd>
     </div>
   );
 }

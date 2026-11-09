@@ -15,7 +15,7 @@ describe('format helpers', () => {
     expect(formatTimestamp(Number.NaN)).toBe('--:--:--');
     expect(formatDateTime(Number.POSITIVE_INFINITY)).toBe('Invalid date');
     expect(formatRelativeTime(Number.NaN, 0)).toBe('unknown');
-    expect(formatDuration(Number.NaN)).toBe('—');
+    expect(formatDuration(Number.NaN)).toBe('-');
   });
 
   it('formats durations', () => {

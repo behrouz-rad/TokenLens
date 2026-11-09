@@ -12,7 +12,7 @@ as clock skew. Each of these could lead a developer to a wrong conclusion about 
 ## Decision
 
 - Signature: TokenLens does not verify signatures. The only states are
-  `Signature present — not verified` (info), `Unsigned` (alg none or empty signature, error) and
+  `Signature present, not verified` (info), `Unsigned` (alg none or empty signature, error) and
   `No signature (not a JWT)`. No green indicator is ever derived from a non-empty third segment.
 - Algorithm: recognised algorithms are reported as information with context (symmetric vs
   asymmetric). `none` is an error. Unknown names are warnings. No algorithm is called secure.

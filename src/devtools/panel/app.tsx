@@ -17,6 +17,7 @@ import { PayloadViewer } from './features/tokens/payload-viewer';
 import { DiagnosticsPanel } from './features/diagnostics/diagnostics-panel';
 import { RequestExplorer } from './features/requests/request-explorer';
 import { GlobalTimeline } from './features/timeline/global-timeline';
+import { DecoderWorkspace } from './features/decoder/decoder-workspace';
 
 /** Below this width the three columns cannot all stay usable, so the panel switches to a single-column view. */
 export const NARROW_LAYOUT_BREAKPOINT = 720;
@@ -145,11 +146,15 @@ function PayloadDialog() {
   );
 }
 
-/** Overview keeps the three-column workspace; Requests and Timeline are cross-token views that use the full width. */
+/**
+ * Overview keeps the three-column workspace; Requests and Timeline are cross-token views and the
+ * Decoder a manual-input workspace, all using the full width.
+ */
 function Workspace({ narrow }: { narrow: boolean }) {
   const activeMainTab = useUIStore((s) => s.activeMainTab);
   if (activeMainTab === 'requests') return <RequestExplorer />;
   if (activeMainTab === 'timeline') return <GlobalTimeline />;
+  if (activeMainTab === 'decoder') return <DecoderWorkspace narrow={narrow} />;
   return narrow ? <NarrowLayout /> : <WideLayout />;
 }
 

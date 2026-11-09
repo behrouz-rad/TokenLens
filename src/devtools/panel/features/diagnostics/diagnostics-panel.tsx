@@ -3,9 +3,7 @@ import { useSelectedToken, useTokenRequests } from '@/hooks/use-selected-token';
 import { useUIStore } from '@/state/ui-store';
 import { useNow } from '@/state/clock';
 import { runDiagnostics, runRequestDiagnostics } from '@/core/diagnostics/engine';
-import { StatusIndicator } from '../../components/ui/status-indicator';
-import { cn } from '@/lib/cn';
-import type { DiagnosticCheck } from '@/types';
+import { DiagnosticList } from './diagnostic-list';
 
 export function DiagnosticsPanel() {
   const token = useSelectedToken();
@@ -33,44 +31,16 @@ export function DiagnosticsPanel() {
         <span className="text-2xs text-dt-text-tertiary">Decoded locally · signature not verified</span>
       </div>
 
-      <ul className="divide-y divide-dt-border-subtle">
-        {tokenChecks.map((check) => (
-          <DiagnosticRow key={check.id} check={check} />
-        ))}
-      </ul>
+      <DiagnosticList checks={tokenChecks} />
 
       {requestChecks.length > 0 && (
         <>
           <div className="border-t border-dt-border px-3 py-1.5 text-2xs font-medium uppercase tracking-wider text-dt-text-tertiary">
             HTTP evidence
           </div>
-          <ul className="divide-y divide-dt-border-subtle">
-            {requestChecks.map((check) => (
-              <DiagnosticRow key={check.id} check={check} />
-            ))}
-          </ul>
+          <DiagnosticList checks={requestChecks} />
         </>
       )}
     </section>
-  );
-}
-
-function DiagnosticRow({ check }: { check: DiagnosticCheck }) {
-  return (
-    <li className="flex items-start gap-3 px-3 py-2" data-testid="diagnostic-row" data-check-id={check.id} data-severity={check.severity}>
-      <div className="min-w-0 flex-1">
-        <span className="text-xs text-dt-text">{check.label}</span>
-        <p
-          className={cn(
-            'mt-0.5 break-words text-2xs',
-            check.severity === 'error' ? 'text-dt-error' : check.severity === 'warning' ? 'text-dt-warning' : 'text-dt-text-secondary'
-          )}
-        >
-          {check.description}
-        </p>
-        {check.details && <p className="mt-0.5 break-words text-2xs italic text-dt-text-tertiary">{check.details}</p>}
-      </div>
-      <StatusIndicator severity={check.severity} size={14} className="mt-0.5 shrink-0" />
-    </li>
   );
 }

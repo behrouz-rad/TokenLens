@@ -231,7 +231,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo "TokenLens ${{ needs.validate.outputs.version }} — Chrome DevTools extension for inspecting JWT and Bearer tokens."
+            echo "TokenLens ${{ needs.validate.outputs.version }}: Chrome DevTools extension for inspecting JWT and Bearer tokens."
             echo
             echo "## Install"
             echo

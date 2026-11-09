@@ -64,7 +64,7 @@ function buildColumns(showHost: boolean, showToken: boolean) {
       sortFn: 'basic',
       cell: ({ getValue, row }) => (
         <span className={cn('font-mono text-xs', httpStatusTone(getValue()))} title={row.original.request.statusText}>
-          {getValue() === 0 ? '—' : getValue()}
+          {getValue() === 0 ? '-' : getValue()}
           {row.original.request.statusText && <span className="ml-1 text-2xs">{row.original.request.statusText}</span>}
         </span>
       ),

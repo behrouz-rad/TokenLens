@@ -3,20 +3,18 @@ import { toast } from 'sonner';
 import { useSelectedToken } from '@/hooks/use-selected-token';
 import { useUIStore } from '@/state/ui-store';
 import { copyToClipboard } from '@/lib/clipboard';
-import { cn } from '@/lib/cn';
 import { JsonViewer } from '../../components/ui/json-viewer';
+import { ModeToggle, type ViewMode } from '../../components/ui/mode-toggle';
 import { Copy, Maximize2, Minimize2, UnfoldVertical, FoldVertical } from 'lucide-react';
-
-type Mode = 'pretty' | 'raw';
 
 export function PayloadViewer({ maximized = false }: { maximized?: boolean }) {
   const token = useSelectedToken();
   const setMaximized = useUIStore((s) => s.setPayloadMaximized);
-  const [mode, setMode] = useState<Mode>('pretty');
+  const [mode, setMode] = useState<ViewMode>('pretty');
   const [expandAll, setExpandAll] = useState(false);
 
   const decoded = token?.decoded ?? null;
-  const effectiveMode: Mode = decoded ? mode : 'raw';
+  const effectiveMode: ViewMode = decoded ? mode : 'raw';
 
   const handleCopy = useCallback(async () => {
     if (!token) return;
@@ -34,29 +32,12 @@ export function PayloadViewer({ maximized = false }: { maximized?: boolean }) {
     );
   }
 
-  const segmentButton = (value: Mode, label: string) => (
-    <button
-      onClick={() => setMode(value)}
-      aria-pressed={effectiveMode === value}
-      disabled={!decoded && value === 'pretty'}
-      className={cn(
-        'rounded px-2 py-0.5 text-2xs transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-        effectiveMode === value ? 'bg-dt-bg-elevated text-dt-text shadow-sm' : 'text-dt-text-tertiary hover:text-dt-text'
-      )}
-    >
-      {label}
-    </button>
-  );
-
   return (
     <div className="flex h-full flex-col" data-testid="payload-viewer">
       <div className="flex items-center justify-between gap-2 border-b border-dt-border px-3 py-2">
         <h3 className="text-xs font-semibold text-dt-text">{decoded ? 'Payload' : 'Token value'}</h3>
         <div className="flex items-center gap-1">
-          <div className="flex rounded bg-dt-bg-tertiary p-0.5" role="group" aria-label="Payload display mode">
-            {segmentButton('pretty', 'Pretty')}
-            {segmentButton('raw', 'Raw')}
-          </div>
+          <ModeToggle value={effectiveMode} onChange={setMode} label="Payload display mode" prettyDisabled={!decoded} />
           {decoded && effectiveMode === 'pretty' && (
             <button
               onClick={() => setExpandAll((v) => !v)}

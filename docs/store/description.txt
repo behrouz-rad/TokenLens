@@ -1,22 +1,24 @@
-TokenLens adds a TokenLens tab to Chrome DevTools that shows the JWT and Bearer tokens your web application sends while DevTools is open. It watches the inspected page's network requests for Authorization: Bearer headers, decodes JSON Web Tokens locally, links every token to the requests that carried it, and explains what the claims mean right now: active, expiring soon, expired or not yet valid.
+TokenLens adds a TokenLens tab to Chrome DevTools that shows the JWT and Bearer tokens your web application sends while DevTools is open. It watches the inspected page's network requests for Authorization: Bearer headers, decodes JSON Web Tokens locally, links every token to the requests that carried it, and explains what the claims mean right now: active, expiring soon, expired or not yet active. A Decoder section decodes any token you paste, with nothing captured.
 
 WHAT YOU GET
 • Overview: one entry per distinct token with search, status and quick filters; the selected token's header, claims summary, decoded payload and header (pretty or raw, expand, copy), per-token timeline and request list.
 • Requests: every captured Bearer-authenticated request across all tokens, searchable and sortable by time, method, URL, status and duration, with a link back to its token.
 • Timeline: a chronological stream of token events (first observed, used in request, failed request, issued, expired). Events observed in traffic are distinguished from events derived from a token's own iat and exp claims.
+• Decoder: paste a JWT (with or without "Bearer ") and see its header and payload, pretty or exactly as encoded, with copy buttons, plus algorithm, signature state, issuer, audience, live expiry and the same diagnostics. Malformed JWTs, opaque tokens, JWE and over-size input get specific feedback. Pasted tokens are kept apart from captured traffic and are never saved.
 • Honest diagnostics: signature present (not verified) or unsigned, algorithm context, live exp/nbf/iat checks, missing aud or iss, kid shown without guessing a JWKS, and HTTP 401/403/5xx responses presented as evidence with possible causes.
 • Opaque Bearer tokens, malformed JWTs and unsupported formats such as JWE are told apart and labelled.
 • Live status updates, dark and light themes, resizable columns and a compact layout for narrow panels.
 
 PRIVACY
-Everything happens inside your browser. TokenLens requests no permissions, has no background worker or content scripts, makes no network requests of its own and sends nothing anywhere. Captured tokens stay in memory for the DevTools session; only UI preferences and panel layout are saved locally. Copying a token value happens only when you click Copy.
+Everything happens inside your browser. TokenLens requests no permissions, has no background worker or content scripts, makes no network requests of its own and sends nothing anywhere. Captured and pasted tokens stay in memory for the DevTools session; only UI preferences and panel layout are saved locally. Copying a token or decoded content happens only when you click a copy button.
 
 WHAT IT DOES NOT DO
-TokenLens decodes; it does not verify. It does not check signatures, fetch JWKS, measure clock skew or inspect storage, cookies or OAuth flows. "Active" means "not expired", not "trusted".
+TokenLens decodes; it does not verify. It does not check signatures, decrypt JWE, fetch JWKS, measure clock skew or inspect storage, cookies or OAuth flows. "Active" means "not expired", not "trusted".
 
 HOW TO USE
 1. Open DevTools on your page and select the TokenLens tab (it may sit in the » overflow menu on narrow windows).
 2. Trigger requests that send Authorization: Bearer. Only traffic observed after DevTools opened is captured.
 3. Select a token to inspect its claims, timeline, requests and diagnostics, or switch to Requests and Timeline for views across all tokens.
+4. To inspect a token from anywhere else, open Decoder and paste it.
 
 Requires Chrome 116 or newer. Open source under the MIT licence: https://github.com/behrouz-rad/TokenLens
