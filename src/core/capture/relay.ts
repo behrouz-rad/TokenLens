@@ -1,5 +1,20 @@
 import type { MessagePort, CaptureMessage } from './channel';
-import { harEntryKey, harEntryToObservation, isHarEntryInFlight, type CaptureObservation, type HarEntryLike } from './observation';
+import {
+  harEntryKey,
+  harEntryRequestIdentity,
+  harEntryToObservation,
+  isHarEntryInFlight,
+  type CaptureObservation,
+  type HarEntryLike,
+  type UnsequencedRequestObservation,
+} from './observation';
+
+/** A completed request seen in one poll, kept sanitised (no headers besides the Bearer value). */
+interface UnconfirmedRequest {
+  observation: UnsequencedRequestObservation;
+  identity: string;
+  time: number | undefined;
+}
 
 export interface DevtoolsNetworkApi {
   addRequestListener(listener: (entry: HarEntryLike) => void): void;
@@ -46,15 +61,24 @@ export interface RelayOptions {
  *    briefly, with a response whose loading has not finished (its duration still changes). In-flight
  *    entries are skipped until they complete or fail. A completed entry first seen in a poll is
  *    emitted once onRequestFinished delivers it or a later poll reports it unchanged, so each
- *    request is emitted once, with its final values.
+ *    request is emitted once, with its final values. A request can still fail after that first
+ *    sighting (a dropped connection, a cancellation); its failure is reported under a new key, and
+ *    the earlier snapshot is discarded because the request is still in the log.
+ *
+ * Clear is a boundary in time: a request that started before the relay received `clear` belongs to
+ * the cleared session and is never emitted afterwards, whether it was awaiting confirmation, still
+ * in flight, returned by a getHAR() call that overlapped the Clear or delivered live later. Request
+ * keys cannot express this, because an in-flight request has no stable key before it finishes.
  */
 export class CaptureRelay {
   private readonly buffer: CaptureObservation[] = [];
   private readonly outbox: CaptureObservation[] = [];
   private readonly seenKeys = new Set<string>();
   private readonly seenKeyOrder: string[] = [];
-  /** Completed entries seen in one poll, waiting for onRequestFinished or an unchanged next poll. */
-  private readonly unconfirmed = new Map<string, HarEntryLike>();
+  /** Completed requests seen in one poll, waiting for onRequestFinished or an unchanged next poll. */
+  private readonly unconfirmed = new Map<string, UnconfirmedRequest>();
+  /** Requests that started before this time were cleared by the user (see the class comment). */
+  private clearedAt = Number.NEGATIVE_INFINITY;
   private readonly now: () => number;
   private readonly bufferSize: number;
   private readonly flushIntervalMs: number;
@@ -132,17 +156,26 @@ export class CaptureRelay {
 
   /** Emits the entry unless an identical request key was already emitted (live or polled). */
   private admit(entry: HarEntryLike): boolean {
-    const key = harEntryKey(entry);
+    return this.emit(harEntryKey(entry), harEntryToObservation(entry, this.now()));
+  }
+
+  /** Emits a request once per key; a request from before the last Clear is remembered, not emitted. */
+  private emit(key: string, observation: UnsequencedRequestObservation): boolean {
     this.unconfirmed.delete(key);
     if (this.seenKeys.has(key)) return false;
+    this.remember(key);
+    if (observation.startedAt < this.clearedAt) return false;
+    this.enqueue({ ...observation, relayId: this.options.relayId, seq: ++this.seq });
+    return true;
+  }
+
+  private remember(key: string): void {
     this.seenKeys.add(key);
     this.seenKeyOrder.push(key);
     if (this.seenKeyOrder.length > this.seenKeyLimit) {
       const oldest = this.seenKeyOrder.splice(0, this.seenKeyOrder.length - this.seenKeyLimit);
       for (const k of oldest) this.seenKeys.delete(k);
     }
-    this.enqueue({ ...harEntryToObservation(entry, this.now()), relayId: this.options.relayId, seq: ++this.seq });
-    return true;
   }
 
   private schedulePoll(delayMs: number): void {
@@ -172,22 +205,34 @@ export class CaptureRelay {
   /** Emits each polled request once it is final; see the class comment for the snapshot stages. */
   private reconcile(entries: readonly HarEntryLike[]): void {
     const listed = new Set<string>();
+    const present = new Set<string>();
     for (const entry of entries) {
+      present.add(harEntryRequestIdentity(entry));
       if (isHarEntryInFlight(entry)) continue;
       const key = harEntryKey(entry);
       listed.add(key);
       if (this.seenKeys.has(key)) continue;
+      const observation = harEntryToObservation(entry, this.now());
+      if (observation.startedAt < this.clearedAt) {
+        this.remember(key);
+        continue;
+      }
       const earlier = this.unconfirmed.get(key);
       // A failure is final when first reported; a response is final once its duration stops changing.
       if (entry.response?._error || (earlier !== undefined && earlier.time === entry.time)) {
-        if (this.admit(entry)) this.polledEntryCount += 1;
+        if (this.emit(key, observation)) this.polledEntryCount += 1;
       } else {
-        this.unconfirmed.set(key, entry);
+        this.unconfirmed.set(key, { observation, identity: harEntryRequestIdentity(entry), time: entry.time });
       }
     }
-    // An entry that left the log (cleared on navigation) is never reported again: emit its last snapshot rather than lose the request.
-    for (const [key, entry] of this.unconfirmed) {
-      if (!listed.has(key) && this.admit(entry)) this.polledEntryCount += 1;
+    for (const [key, pending] of this.unconfirmed) {
+      if (listed.has(key)) continue;
+      this.unconfirmed.delete(key);
+      // Still in the log under another key: the request moved on (it failed after its headers, for
+      // example) and its later snapshot is reported on its own.
+      if (present.has(pending.identity)) continue;
+      // Gone from the log (cleared on navigation) and never reported again: emit the last snapshot rather than lose the request.
+      if (this.emit(key, pending.observation)) this.polledEntryCount += 1;
     }
   }
 
@@ -217,9 +262,12 @@ export class CaptureRelay {
 
   private readonly handleMessage = (message: CaptureMessage): void => {
     if (message.type === 'clear') {
-      // Keys stay remembered so already-seen requests are not re-emitted; only the replay is dropped.
+      // Keys stay remembered so already-seen requests are not re-emitted, and every request that
+      // started before now is withheld however it is reported later (see the class comment).
+      this.clearedAt = Math.max(this.clearedAt, this.now());
       this.buffer.length = 0;
       this.outbox.length = 0;
+      this.unconfirmed.clear();
       return;
     }
     if (message.type !== 'hello') return;

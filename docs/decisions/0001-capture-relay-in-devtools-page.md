@@ -46,14 +46,17 @@ sequence cursor in the capture session makes replay idempotent.
   are not backfilled on resume (the cursor still advances).
 - DevTools recreates the panel frame on inspected-page navigation. The new panel replays from the
   relay, so Clear also sends a `clear` message that empties the relay's replay buffer (seen keys
-  are kept so nothing is re-emitted).
+  are kept so nothing is re-emitted). The relay then withholds every request that started before
+  the Clear, including ones still in flight or awaiting confirmation, so cleared traffic cannot
+  come back through a later poll or live event.
 - `getHAR()` polling costs one serialisation per second while the log is small and every five
   seconds once it exceeds 2 000 entries. This is the price of reliable capture.
 - `getHAR()` reports requests before they finish, so polled entries are reconciled with the live
   events rather than trusted as they come: in-flight entries are skipped, the request key ignores
   the duration that is still changing, and a completed entry seen only in a poll is emitted once a
   later poll shows it unchanged. A request seen only through polling therefore appears one poll
-  later, and a request that never completes is not listed.
+  later, and a request that never completes is not listed. A snapshot superseded by a later
+  failure of the same request is discarded rather than emitted.
 - No background worker and no additional permissions.
 
 ## Validation

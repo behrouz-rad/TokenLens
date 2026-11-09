@@ -150,8 +150,9 @@ DevTools extensions.
 5. **Decoder**: paste a token into the field on the left and read the result on the right (see
    *Decoder* above). Capture keeps running meanwhile.
 6. The toolbar offers Recording / Paused, the theme toggle, Settings (theme, expiring threshold,
-   capture limits, clear on navigation) and Clear (captured tokens and requests only). In the
-   Overview it also offers Filters for the token list (search, status, quick filters, expired visibility); Requests and Timeline carry
+   capture limits, clear on navigation) and Clear (captured tokens and requests only; requests
+   still in flight when you clear are discarded too).
+   In the Overview it also offers Filters for the token list (search, status, quick filters, expired visibility); Requests and Timeline carry
    their own filters in their headers, and the status bar reports the active section's filter. In
    the Decoder the status bar shows the local decoding state instead of capture counts.
 

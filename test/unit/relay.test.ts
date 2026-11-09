@@ -11,6 +11,8 @@ function createFakeApi() {
   let harLog: HarEntryLike[] = [];
   let harCalls = 0;
   let failHar = false;
+  let heldHar: ((entries: HarEntryLike[]) => void) | null = null;
+  let holdNext = false;
   const api: DevtoolsNetworkApi = {
     addRequestListener: (l) => requestListeners.add(l),
     removeRequestListener: (l) => requestListeners.delete(l),
@@ -18,6 +20,12 @@ function createFakeApi() {
     removeNavigationListener: (l) => navigationListeners.delete(l),
     getHar: () => {
       harCalls += 1;
+      if (holdNext) {
+        holdNext = false;
+        return new Promise((resolve) => {
+          heldHar = (entries) => resolve({ entries });
+        });
+      }
       return failHar ? Promise.reject(new Error('boom')) : Promise.resolve({ entries: [...harLog] });
     },
   };
@@ -35,6 +43,14 @@ function createFakeApi() {
     },
     set failHar(value: boolean) {
       failHar = value;
+    },
+    /** The next getHAR() call stays pending until `releaseHar` answers it. */
+    holdNextHar: () => {
+      holdNext = true;
+    },
+    releaseHar: (entries: HarEntryLike[]) => {
+      heldHar?.(entries);
+      heldHar = null;
     },
   };
 }
@@ -68,7 +84,7 @@ function entry(id: string, overrides: Partial<HarEntryLike> = {}): HarEntryLike 
   };
 }
 
-function setup(options: { harPollIntervalMs?: number } = {}) {
+function setup(options: { harPollIntervalMs?: number; now?: () => number } = {}) {
   vi.useFakeTimers();
   const fake = createFakeApi();
   const channel = createFakePort();
@@ -80,7 +96,7 @@ function setup(options: { harPollIntervalMs?: number } = {}) {
     flushIntervalMs: 50,
     bufferSize: 5,
     harPollIntervalMs: options.harPollIntervalMs ?? 1000,
-    now: () => 1000,
+    now: options.now ?? (() => 1000),
   });
   relay.start();
   return { relay, fake, channel };
@@ -243,7 +259,9 @@ describe('CaptureRelay', () => {
  * DevTools capture: while in flight it has no status, duration or error; once the response
  * headers arrive it is reported complete, but `timings.receive` (and so `time`) keeps changing
  * until loading finishes; onRequestFinished then delivers the final values. Failures carry
- * `response._error` and a final duration.
+ * `response._error` and a final duration. A request that fails after its headers either keeps
+ * status, connection and settled phases (a dropped connection, `failedAfterHeaders`) or is
+ * reported like a request that never got a response (a cancellation, `failed`).
  */
 function lifecycle(path: string, options: { started?: number; blocked?: number; status?: number; token?: string } = {}) {
   const startedDateTime = new Date(options.started ?? 1_700_000_500_000).toISOString();
@@ -257,6 +275,11 @@ function lifecycle(path: string, options: { started?: number; blocked?: number; 
     request,
     response: { status, statusText: status === 200 ? 'OK' : 'Unauthorized', _error: null },
     timings: { blocked, _blocked_queueing: blocked - 0.5, dns: -1, connect: -1, ssl: -1, send: 0.08, wait: 12.65, receive },
+  });
+  const failedAfterHeaders = (error: string, time: number): HarEntryLike => ({
+    ...completed(time - blocked - 0.08 - 12.65),
+    time,
+    response: { status, statusText: 'OK', _error: error },
   });
   const failed = (error: string, time: number, responseStatus = 0): HarEntryLike => ({
     startedDateTime,
@@ -274,7 +297,7 @@ function lifecycle(path: string, options: { started?: number; blocked?: number; 
   };
   const early = completed(1.89);
   const final = completed(0.55);
-  return { inFlight, early, final, failed, earlyTime: early.time ?? 0, finalTime: final.time ?? 0 };
+  return { inFlight, early, final, failed, failedAfterHeaders, earlyTime: early.time ?? 0, finalTime: final.time ?? 0 };
 }
 
 describe('CaptureRelay reconciles each request across its getHAR() snapshots', () => {
@@ -424,5 +447,163 @@ describe('CaptureRelay reconciles each request across its getHAR() snapshots', (
     expect(record?.requestIds).toHaveLength(2);
     const observed = eventsForToken(state, record!.id).filter((e) => e.requestId !== undefined);
     expect(observed.map((e) => e.type).sort()).toEqual(['failed-request', 'used-in-request']);
+  });
+});
+
+describe('CaptureRelay keeps one observation when a request fails after its response headers', () => {
+  const requestsOf = (sent: CaptureMessage[]) => observationsOf(sent).flatMap((o) => (o.kind === 'request' ? [o] : []));
+
+  async function started() {
+    const ctx = setup();
+    await vi.advanceTimersByTimeAsync(500);
+    const poll = async (entries: HarEntryLike[]) => {
+      ctx.fake.setHar(entries);
+      await vi.advanceTimersByTimeAsync(1000);
+    };
+    const live = async (e: HarEntryLike) => {
+      ctx.fake.emitRequest(e);
+      await vi.advanceTimersByTimeAsync(60);
+    };
+    return { ...ctx, poll, live };
+  }
+
+  it('connection dropped while the body loads, reported live first', async () => {
+    const { channel, poll, live } = await started();
+    const r = lifecycle('dropped');
+    const terminal = r.failedAfterHeaders('net::ERR_INCOMPLETE_CHUNKED_ENCODING', 939.3);
+    await poll([r.early]);
+    await live(terminal);
+    for (let i = 0; i < 3; i++) await poll([terminal]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([[200, 939.3]]);
+  });
+
+  it('connection dropped while the body loads, seen in getHAR() first', async () => {
+    const { channel, poll, live } = await started();
+    const r = lifecycle('dropped-polled');
+    const terminal = r.failedAfterHeaders('net::ERR_INCOMPLETE_CHUNKED_ENCODING', 939.3);
+    await poll([r.early]);
+    await poll([terminal]);
+    await live(terminal);
+    for (let i = 0; i < 3; i++) await poll([terminal]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([[200, 939.3]]);
+  });
+
+  it('cancelled while the body loads, reported as a request without a response, in either order', async () => {
+    const { channel, poll, live } = await started();
+    const first = lifecycle('cancelled-live', { started: 1_700_000_510_000 });
+    const second = lifecycle('cancelled-polled', { started: 1_700_000_520_000 });
+    const firstEnd = first.failed('net::ERR_ABORTED', 913.7);
+    const secondEnd = second.failed('net::ERR_ABORTED', 702.4);
+    await poll([first.early, second.early]);
+    await live(firstEnd);
+    await poll([firstEnd, secondEnd]);
+    await live(secondEnd);
+    for (let i = 0; i < 3; i++) await poll([firstEnd, secondEnd]);
+    expect(requestsOf(channel.sent).map((o) => [o.url.split('/').pop(), o.status, o.durationMs])).toEqual([
+      ['cancelled-live', 0, 913.7],
+      ['cancelled-polled', 0, 702.4],
+    ]);
+  });
+
+  it('keeps concurrent requests with the same URL, token and start millisecond distinct when one fails', async () => {
+    const { channel, poll, live } = await started();
+    const a = lifecycle('twin', { blocked: 44.78 });
+    const b = lifecycle('twin', { blocked: 58.11 });
+    const aEnd = a.failed('net::ERR_ABORTED', 700.2);
+    await poll([a.early, b.early]);
+    await poll([aEnd, b.final]);
+    await poll([aEnd, b.final]);
+    await live(aEnd);
+    await live(b.final);
+    await poll([aEnd, b.final]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([
+      [0, 700.2],
+      [200, b.finalTime],
+    ]);
+  });
+});
+
+describe('CaptureRelay Clear', () => {
+  const requestsOf = (sent: CaptureMessage[]) => observationsOf(sent).flatMap((o) => (o.kind === 'request' ? [o] : []));
+  /** Requests in these tests start at 1_700_000_500_000; Clear happens two seconds later. */
+  const CLEAR_AT = 1_700_000_502_000;
+
+  async function started() {
+    const ctx = setup({ now: () => Date.now() });
+    vi.setSystemTime(CLEAR_AT - 1500);
+    await vi.advanceTimersByTimeAsync(500);
+    const poll = async (entries: HarEntryLike[]) => {
+      ctx.fake.setHar(entries);
+      await vi.advanceTimersByTimeAsync(1000);
+    };
+    const live = async (e: HarEntryLike) => {
+      ctx.fake.emitRequest(e);
+      await vi.advanceTimersByTimeAsync(60);
+    };
+    const clear = () => {
+      vi.setSystemTime(CLEAR_AT);
+      ctx.channel.receive({ type: 'clear', from: 'panel', scope: '7' });
+    };
+    return { ...ctx, poll, live, clear };
+  }
+
+  it('never lets a request awaiting confirmation reappear after Clear', async () => {
+    const { channel, poll, live, clear } = await started();
+    const r = lifecycle('pending');
+    await poll([r.early]);
+    clear();
+    await poll([r.early]);
+    await poll([r.final]);
+    await poll([r.final]);
+    await live(r.final);
+    await poll([r.final]);
+    expect(requestsOf(channel.sent)).toEqual([]);
+  });
+
+  it('does not capture a request that was in flight at Clear when it completes or fails later', async () => {
+    const { channel, poll, live, clear } = await started();
+    const done = lifecycle('in-flight-done');
+    const cancelled = lifecycle('in-flight-cancelled');
+    await poll([done.inFlight, cancelled.inFlight]);
+    clear();
+    await live(done.final);
+    await poll([done.final, cancelled.failed('net::ERR_ABORTED', 2300)]);
+    await poll([done.final, cancelled.failed('net::ERR_ABORTED', 2300)]);
+    expect(requestsOf(channel.sent)).toEqual([]);
+  });
+
+  it('treats a getHAR() call that was answered after Clear as pre-Clear state', async () => {
+    const { channel, fake, poll, clear } = await started();
+    const r = lifecycle('overlap');
+    fake.holdNextHar();
+    await vi.advanceTimersByTimeAsync(1000);
+    clear();
+    fake.releaseHar([r.final, lifecycle('overlap-failed').failed('net::ERR_CONNECTION_REFUSED', 6.2)]);
+    await vi.advanceTimersByTimeAsync(1000);
+    await poll([r.final]);
+    expect(requestsOf(channel.sent)).toEqual([]);
+  });
+
+  it('replays nothing from before Clear', async () => {
+    const { channel, live, clear } = await started();
+    await live(lifecycle('emitted').final);
+    clear();
+    channel.receive({ type: 'hello', from: 'panel', scope: '7' });
+    const snapshot = channel.sent.find((m) => m.type === 'snapshot');
+    expect(snapshot?.type === 'snapshot' && snapshot.observations).toEqual([]);
+  });
+
+  it('captures a request that starts after Clear exactly once', async () => {
+    const { channel, poll, live, clear } = await started();
+    const before = lifecycle('before');
+    await poll([before.early]);
+    clear();
+    const after = lifecycle('after', { started: CLEAR_AT + 300 });
+    await poll([before.final, after.inFlight]);
+    await poll([before.final, after.early]);
+    await live(after.final);
+    await poll([before.final, after.final]);
+    await poll([before.final, after.final]);
+    expect(requestsOf(channel.sent).map((o) => [o.url.split('/').pop(), o.durationMs])).toEqual([['after', after.finalTime]]);
   });
 });
