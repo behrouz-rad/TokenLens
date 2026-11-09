@@ -59,6 +59,16 @@
           reports: jwt({ alg: 'HS256', typ: 'JWT' }, { iss: 'https://reports.example.test', sub: 'svc-reports', iat: sec - 7200 }),
         };
 
+        // Never sent by this page: the token the video pastes into the Decoder, as if it had been
+        // copied from somewhere else. Times are relative to page load, so it is always current.
+        const samples = {
+          decoder: jwt({ alg: 'RS256', typ: 'JWT', kid: 'partner-2026-11' }, {
+            iss: 'https://id.example.test', sub: 'synthetic-user-42', aud: 'https://reports.example.test',
+            scope: 'reports:read reports:export', iat: sec - 120, nbf: sec - 120, exp: sec + 3600,
+            tenant: { id: 'tenant_demo', region: 'eu-west' },
+          }),
+        };
+
         const API = 'http://api.example.test';
         const SCRIPTS = {
           initial: [
@@ -96,7 +106,12 @@
           return Promise.all(script.map(([at, key, method, url]) => new Promise((r) => setTimeout(r, at)).then(() => send(key, method, url))));
         }
 
-        window.acmeDemo = { play, count: (name) => SCRIPTS[name].length };
+        function sample(name) {
+          if (!samples[name]) throw new Error('unknown sample ' + name);
+          return samples[name];
+        }
+
+        window.acmeDemo = { play, count: (name) => SCRIPTS[name].length, sample };
         document.body.dataset.demoReady = 'true';
       })();
     </script>
