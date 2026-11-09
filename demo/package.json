@@ -10,7 +10,8 @@
     "edit": "node scripts/edit.mjs",
     "assemble": "node scripts/assemble.mjs",
     "video": "node scripts/build.mjs",
-    "inspect": "node scripts/inspect.mjs"
+    "inspect": "node scripts/inspect.mjs",
+    "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "3.8.1",

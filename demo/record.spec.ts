@@ -35,6 +35,8 @@ interface Direction {
   seconds?: number;
   play?: string;
   wheel?: number;
+  paste?: string;
+  expect?: { in: string; text: string }[];
   hold?: number;
   duration?: number;
   minDuration: number;
@@ -50,6 +52,10 @@ interface Point {
 interface Box extends Point {
   width: number;
   height: number;
+}
+interface CaptureCounts {
+  tokens: string;
+  requests: string;
 }
 interface TakeStep {
   index: number;
@@ -94,8 +100,8 @@ function pathPoint(m: Movement, u: number): Point {
 }
 
 /**
- * Finds one visible element and returns its box. Runs inside a document (the panel or the
- * DevTools frontend). Targets: css=, testid=, text= (exact, then prefix; smallest match),
+ * Finds one visible element and returns its box and normalised text. Runs inside a document (the
+ * panel or the DevTools frontend). Targets: css=, testid=, text= (exact, then prefix; smallest match),
  * role=<role>[name='…'], has=<text> (filter), nth=<n>, tab=<DevTools tab>; `a >> b` chains.
  */
 const RESOLVE = String.raw`(chain) => {
@@ -132,7 +138,7 @@ const RESOLVE = String.raw`(chain) => {
   const el = scope[0];
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  return { x: r.x, y: r.y, width: r.width, height: r.height };
+  return { x: r.x, y: r.y, width: r.width, height: r.height, text: norm(el.textContent) };
 }`;
 
 /** Offset of the TokenLens iframe inside the DevTools frontend; extension views sit in shadow roots. */
@@ -143,6 +149,14 @@ const PANEL_OFFSET = String.raw`(() => {
   const r = found.map((f) => f.getBoundingClientRect()).find((b) => b.width > 0);
   return r ? { x: r.x, y: r.y } : null;
 })()`;
+
+/** The capture status bar's counts, or null while a section without it (the Decoder) is shown. */
+const CAPTURE_COUNTS = String.raw`(() => {
+  const tokens = document.querySelector('[data-testid=status-token-count]');
+  const requests = document.querySelector('[data-testid=status-request-count]');
+  return tokens && requests ? { tokens: tokens.textContent.trim(), requests: requests.textContent.trim() } : null;
+})()`;
+const REQUEST_COUNT = `Number(/(\\d+)$/.exec(document.querySelector('[data-testid=status-request-count]')?.textContent ?? '')?.[1] ?? 0)`;
 
 /** Every profile and browser this run creates, so nothing is left behind even when a take is rejected. */
 const launched: { profile: string; close: () => Promise<void> }[] = [];
@@ -318,6 +332,22 @@ test('record TokenLens in real Chrome DevTools', async () => {
   let bend = 1;
   const steps: TakeStep[] = [];
   let expectedRequests = 0;
+  /** Capture counts as last shown, so sections without the capture status bar can be checked against them. */
+  let capture: CaptureCounts | null = null;
+
+  /**
+   * Inserts a sample token from the demo page into the field the click just focused, in one
+   * native text insertion (Input.insertText, as a paste delivers it): the panel receives real
+   * input events and decodes on its own schedule. Nothing in the panel is set directly.
+   */
+  async function paste(sample: string, ts: TakeStep) {
+    expect(capture, `step ${ts.index + 1}: capture counts must be known before pasting`).not.toBeNull();
+    const text = await page.evaluate((name) => (window as unknown as { acmeDemo: { sample: (n: string) => string } }).acmeDemo.sample(name), sample);
+    const focused = await waitPanel<string>(`document.activeElement?.tagName ?? ''`, (tag) => tag === 'TEXTAREA' || tag === 'INPUT', 5);
+    expect(focused, `step ${ts.index + 1}: the click focused a text field`).toMatch(/TEXTAREA|INPUT/);
+    const response = await client.send('Input.insertText', { text }, devtools);
+    if (response.error) throw new Error(`step ${ts.index + 1}: Input.insertText failed: ${response.error.message}`);
+  }
 
   /** Moves the real pointer along the same arc the edit will draw, so hover states match it. */
   async function travel(to: Point, ts: TakeStep) {
@@ -354,6 +384,7 @@ test('record TokenLens in real Chrome DevTools', async () => {
           await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...at }, devtools);
           await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...at }, devtools);
         }
+        if (d.paste) await paste(d.paste, ts);
         break;
       }
       case 'highlight':
@@ -386,6 +417,15 @@ test('record TokenLens in real Chrome DevTools', async () => {
         throw new Error(`step kind ${d.kind} is not supported by the DevTools recorder`);
     }
 
+    for (const e of d.expect ?? []) {
+      // Semantic readiness: the real UI has to show the result before the step may end.
+      const w0 = now();
+      await waitPanel<string>(`(${RESOLVE})(${JSON.stringify(e.in)})?.text ?? ''`, (v) => v.includes(e.text), 10).catch(() => {
+        throw new Error(`step ${d.index + 1}: "${e.text}" never appeared in ${e.in}`);
+      });
+      if (now() - w0 > 0.4) ts.waits.push([w0, now()]);
+    }
+
     if (d.play) {
       // The first show of the TokenLens tab creates its frame; traffic starts once it is up, so
       // the inventory visibly fills in rather than appearing all at once.
@@ -393,19 +433,20 @@ test('record TokenLens in real Chrome DevTools', async () => {
       await sleep(pace(0.3));
       const expected = await page.evaluate((name) => (window as unknown as { acmeDemo: { count: (n: string) => number } }).acmeDemo.count(name), d.play);
       void page.evaluate((name) => (window as unknown as { acmeDemo: { play: (n: string) => Promise<unknown> } }).acmeDemo.play(name), d.play);
-      const countExpr = `Number(/(\\d+)$/.exec(document.querySelector('[data-testid=status-request-count]')?.textContent ?? '')?.[1] ?? 0)`;
-      await waitPanel<number>(countExpr, (n) => n >= expected, 30);
+      await waitPanel<number>(REQUEST_COUNT, (n) => n >= expected, 30);
       // The integrity settle shows nothing new, so the edit speeds it up like any wait.
       const settle = now();
       await sleep(0.3);
       ts.waits.push([settle, now()]);
-      const seen = await inPanel<number>(countExpr);
+      const seen = await inPanel<number>(REQUEST_COUNT);
       // Known intermittent capture issue: a getHAR() reconciliation that lands while a request
       // is in flight can add a status-less twin of that request. A take showing it misstates the
       // traffic, so it is rejected and reshot rather than edited (see demo/README.md).
       expect(seen, `Bearer requests captured for burst "${d.play}" (a duplicate means the in-flight HAR twin appeared; reshoot)`).toBe(expected);
       expectedRequests += expected;
     }
+
+    capture = (await inPanel<CaptureCounts | null>(CAPTURE_COUNTS)) ?? capture;
 
     const hold = (d.hold ?? 0) + (d.kind === 'click' || d.kind === 'hover' ? 0.7 : 0.2);
     await sleep(pace(hold));
@@ -421,10 +462,24 @@ test('record TokenLens in real Chrome DevTools', async () => {
 
   await sleep(pace(0.7));
   const duration = now();
-  // A late HAR twin would be on screen in the last steps, so the count is checked once more.
-  const countAtEnd = await inPanel<number>(`Number(/(\\d+)$/.exec(document.querySelector('[data-testid=status-request-count]')?.textContent ?? '')?.[1] ?? 0)`);
-  expect(countAtEnd, 'Bearer requests captured by the end of the take').toBe(expectedRequests);
   if (!CHECK) await client.send('Page.stopScreencast', {}, devtools);
+
+  // Off camera: the take may end in a section without the capture status bar (the Decoder), so
+  // the Overview is opened with a real click to read the session it left behind.
+  if ((await inPanel<CaptureCounts | null>(CAPTURE_COUNTS)) === null) {
+    const scratch: TakeStep = { index: directions.steps.length, kind: 'click', label: 'check', start: now(), end: 0, waits: [] };
+    const box = await resolveBox("css=nav[aria-label='Main sections'] >> text=Overview", scratch);
+    const at = { x: box.x + box.width / 2, y: box.y + box.height / 2, button: 'left', clickCount: 1 };
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y }, devtools);
+    await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...at }, devtools);
+    await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...at }, devtools);
+  }
+  const captureAtEnd = await waitPanel<CaptureCounts | null>(CAPTURE_COUNTS, (c) => c !== null, 10);
+  // The Decoder never adds to the capture session: tokens and requests are exactly as before it.
+  expect(captureAtEnd, 'capture counts after the Decoder scene').toEqual(capture);
+  // A late HAR twin would be on screen in the last steps, so the count is checked once more.
+  const countAtEnd = await inPanel<number>(REQUEST_COUNT);
+  expect(countAtEnd, 'Bearer requests captured by the end of the take').toBe(expectedRequests);
   clearInterval(pump);
   await Promise.all(writes);
   expect(panelErrors, 'runtime errors in the TokenLens panel').toEqual([]);
