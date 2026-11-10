@@ -464,8 +464,89 @@ describe('CaptureRelay keeps one observation when a request fails after its resp
       ctx.fake.emitRequest(e);
       await vi.advanceTimersByTimeAsync(60);
     };
-    return { ...ctx, poll, live };
+    /** A navigation with Preserve log off: DevTools empties its log, and the relay re-polls at once. */
+    const navigate = async () => {
+      ctx.fake.setHar([]);
+      ctx.fake.emitNavigation('https://app.example.test/next');
+      await vi.advanceTimersByTimeAsync(100);
+    };
+    return { ...ctx, poll, live, navigate };
   }
+
+  it('connection dropped while the body loads, reported live, then the log is cleared: only the failure is kept', async () => {
+    const { channel, poll, live, navigate } = await started();
+    const r = lifecycle('dropped-then-navigated');
+    await poll([r.early]);
+    await live(r.failedAfterHeaders('net::ERR_INCOMPLETE_CHUNKED_ENCODING', 939.3));
+    await navigate();
+    await poll([]);
+    await poll([]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([[200, 939.3]]);
+  });
+
+  it('cancelled while the body loads, reported live, then the log is cleared: only the cancellation is kept', async () => {
+    const { channel, poll, live, navigate } = await started();
+    const r = lifecycle('cancelled-then-navigated');
+    await poll([r.early]);
+    await live(r.failed('net::ERR_ABORTED', 913.7));
+    await navigate();
+    await poll([]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([[0, 913.7]]);
+  });
+
+  it('keeps same-millisecond twins apart when one drops its connection and the other succeeds before the log is cleared', async () => {
+    const { channel, poll, live, navigate } = await started();
+    const a = lifecycle('twin-navigated', { blocked: 44.78 });
+    const b = lifecycle('twin-navigated', { blocked: 58.11 });
+    const aEnd = a.failedAfterHeaders('net::ERR_INCOMPLETE_CHUNKED_ENCODING', 939.3);
+    await poll([a.early, b.early]);
+    await live(aEnd);
+    await live(b.final);
+    await navigate();
+    await poll([]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([
+      [200, 939.3],
+      [200, b.finalTime],
+    ]);
+  });
+
+  it('keeps same-millisecond twins apart when one succeeds and then the other is cancelled before the log is cleared', async () => {
+    const { channel, poll, live, navigate } = await started();
+    const a = lifecycle('twin-cancelled', { blocked: 44.78 });
+    const b = lifecycle('twin-cancelled', { blocked: 58.11 });
+    await poll([a.early, b.early]);
+    await live(b.final);
+    await live(a.failed('net::ERR_ABORTED', 702.4));
+    await navigate();
+    await poll([]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([
+      [200, b.finalTime],
+      [0, 702.4],
+    ]);
+  });
+
+  it('never drops a twin when it cannot tell which one a reset cancellation belongs to', async () => {
+    const { channel, poll, live, navigate } = await started();
+    const a = lifecycle('twin-ambiguous', { blocked: 44.78 });
+    const b = lifecycle('twin-ambiguous', { blocked: 58.11 });
+    await poll([a.early, b.early]);
+    // A cancellation resets status, connection and timings, so nothing ties it to either snapshot.
+    await live(a.failed('net::ERR_ABORTED', 702.4));
+    await navigate();
+    const durations = requestsOf(channel.sent).map((o) => o.durationMs);
+    expect(durations).toContain(702.4);
+    expect(durations).toContain(b.earlyTime);
+    expect(durations).toHaveLength(3);
+  });
+
+  it('still reports a pending request that leaves the log on navigation without any result of its own', async () => {
+    const { channel, poll, navigate } = await started();
+    const r = lifecycle('pending-navigated');
+    await poll([r.early]);
+    await navigate();
+    await poll([]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([[200, r.earlyTime]]);
+  });
 
   it('connection dropped while the body loads, reported live first', async () => {
     const { channel, poll, live } = await started();
@@ -546,6 +627,19 @@ describe('CaptureRelay Clear', () => {
     };
     return { ...ctx, poll, live, clear };
   }
+
+  it('never lets a request awaiting confirmation reappear after Clear, even when its failure arrives live and the log is then cleared', async () => {
+    const { channel, fake, poll, live, clear } = await started();
+    const r = lifecycle('pending-failed-cleared');
+    await poll([r.early]);
+    clear();
+    await live(r.failedAfterHeaders('net::ERR_INCOMPLETE_CHUNKED_ENCODING', 939.3));
+    fake.setHar([]);
+    fake.emitNavigation('https://app.example.test/next');
+    await vi.advanceTimersByTimeAsync(100);
+    await poll([]);
+    expect(requestsOf(channel.sent)).toEqual([]);
+  });
 
   it('never lets a request awaiting confirmation reappear after Clear', async () => {
     const { channel, poll, live, clear } = await started();

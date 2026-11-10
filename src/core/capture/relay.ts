@@ -63,7 +63,8 @@ export interface RelayOptions {
  *    emitted once onRequestFinished delivers it or a later poll reports it unchanged, so each
  *    request is emitted once, with its final values. A request can still fail after that first
  *    sighting (a dropped connection, a cancellation); its failure is reported under a new key, and
- *    the earlier snapshot is discarded because the request is still in the log.
+ *    the earlier snapshot is discarded: when the failure arrives live (see `retireSnapshotOf`), or
+ *    when a poll still lists the request under its new key.
  *
  * Clear is a boundary in time: a request that started before the relay received `clear` belongs to
  * the cleared session and is never emitted afterwards, whether it was awaiting confirmation, still
@@ -99,6 +100,7 @@ export class CaptureRelay {
 
   private readonly onRequestFinished = (entry: HarEntryLike): void => {
     this.liveEventCount += 1;
+    this.retireSnapshotOf(entry);
     this.admit(entry);
   };
 
@@ -152,6 +154,26 @@ export class CaptureRelay {
 
   get stats(): { liveEvents: number; polledEntries: number; emitted: number } {
     return { liveEvents: this.liveEventCount, polledEntries: this.polledEntryCount, emitted: this.seq };
+  }
+
+  /**
+   * A failure delivered live ends the request whose earlier response snapshot may be awaiting
+   * confirmation under a different key. If the log is cleared before the next poll, that snapshot
+   * would otherwise look like a request that left the log without a result. A failure that kept
+   * its response (status, connection, timings) matches its snapshot exactly. A cancellation resets
+   * them, so only the start time, method and URL remain; it retires a snapshot only when exactly
+   * one shares them, because two identical requests started in the same millisecond cannot be
+   * told apart and dropping the wrong one would lose a request.
+   */
+  private retireSnapshotOf(entry: HarEntryLike): void {
+    if (!entry.response?._error) return;
+    if (entry.response.status) {
+      this.unconfirmed.delete(harEntryKey({ ...entry, response: { ...entry.response, _error: null } }));
+      return;
+    }
+    const identity = harEntryRequestIdentity(entry);
+    const matches = [...this.unconfirmed].filter(([, pending]) => pending.identity === identity);
+    if (matches.length === 1 && matches[0]) this.unconfirmed.delete(matches[0][0]);
   }
 
   /** Emits the entry unless an identical request key was already emitted (live or polled). */
