@@ -11,16 +11,16 @@ you paste, without any captured traffic. Nothing leaves the browser.
 ## <img src="docs/icons/demo.svg" width="28" height="28" align="absmiddle" alt=""> Demo
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=quc4VsCjWhM">
+  <a href="https://www.youtube.com/watch?v=Dz_RP9563Lw">
     <img
-      src="https://img.youtube.com/vi/quc4VsCjWhM/maxresdefault.jpg"
+      src="https://img.youtube.com/vi/Dz_RP9563Lw/maxresdefault.jpg"
       alt="Watch TokenLens Demo"
       width="720"
     />
   </a>
   <br>
   <sub>
-    ▶ <a href="https://www.youtube.com/watch?v=quc4VsCjWhM">Watch the one-minute demo</a>
+    ▶ <a href="https://www.youtube.com/watch?v=Dz_RP9563Lw">Watch the one-minute demo</a>
   </sub>
 </p>
 
