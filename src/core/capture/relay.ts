@@ -63,7 +63,7 @@ export interface RelayOptions {
  *    emitted once onRequestFinished delivers it or a later poll reports it unchanged, so each
  *    request is emitted once, with its final values. A request can still fail after that first
  *    sighting (a dropped connection, a cancellation); its failure is reported under a new key, and
- *    the earlier snapshot is discarded: when the failure arrives live (see `retireSnapshotOf`), or
+ *    the earlier snapshot is discarded: when the failure arrives live (see `settle`), or
  *    when a poll still lists the request under its new key.
  *
  * Clear is a boundary in time: a request that started before the relay received `clear` belongs to
@@ -78,6 +78,12 @@ export class CaptureRelay {
   private readonly seenKeyOrder: string[] = [];
   /** Completed requests seen in one poll, waiting for onRequestFinished or an unchanged next poll. */
   private readonly unconfirmed = new Map<string, UnconfirmedRequest>();
+  /**
+   * In-flight requests per start time, method and URL in the latest successful poll, less those
+   * finished live since (see `settle`). Rebuilt by every poll and emptied by Clear, so it never
+   * holds more than the log's in-flight entries, and no request data.
+   */
+  private inFlightByIdentity = new Map<string, number>();
   /** Requests that started before this time were cleared by the user (see the class comment). */
   private clearedAt = Number.NEGATIVE_INFINITY;
   private readonly now: () => number;
@@ -100,7 +106,7 @@ export class CaptureRelay {
 
   private readonly onRequestFinished = (entry: HarEntryLike): void => {
     this.liveEventCount += 1;
-    this.retireSnapshotOf(entry);
+    this.settle(entry);
     this.admit(entry);
   };
 
@@ -157,23 +163,35 @@ export class CaptureRelay {
   }
 
   /**
-   * A failure delivered live ends the request whose earlier response snapshot may be awaiting
-   * confirmation under a different key. If the log is cleared before the next poll, that snapshot
-   * would otherwise look like a request that left the log without a result. A failure that kept
-   * its response (status, connection, timings) matches its snapshot exactly. A cancellation resets
-   * them, so only the start time, method and URL remain; it retires a snapshot only when exactly
-   * one shares them, because two identical requests started in the same millisecond cannot be
-   * told apart and dropping the wrong one would lose a request.
+   * Accounts for the request a live event finished, before the event is emitted. A request whose
+   * response snapshot awaits confirmation may finish under a different key (it failed), and if the
+   * log is cleared before the next poll, that snapshot would look like a request that left the log
+   * without a result. Chrome gives no request id, so the event is matched to what the relay knows:
+   *  - same key as a waiting snapshot: admitting the event confirms it;
+   *  - a failure that kept its response (status, connection, timings): its earlier snapshot has the
+   *    same key without the error, an exact match;
+   *  - otherwise it finished a request that was not waiting, normally one the latest poll listed in
+   *    flight, and the in-flight count goes down. A cancellation is the exception: it resets status,
+   *    connection and timings, leaving only start time, method and URL. It retires a waiting
+   *    snapshot only if that snapshot is the one unfinished request with that identity the relay
+   *    knows of. With a twin also waiting or in flight, it cannot tell which one was cancelled and
+   *    keeps every snapshot, because dropping the wrong one would lose a request.
    */
-  private retireSnapshotOf(entry: HarEntryLike): void {
-    if (!entry.response?._error) return;
-    if (entry.response.status) {
-      this.unconfirmed.delete(harEntryKey({ ...entry, response: { ...entry.response, _error: null } }));
+  private settle(entry: HarEntryLike): void {
+    if (this.unconfirmed.has(harEntryKey(entry))) return;
+    const error = entry.response?._error;
+    const status = entry.response?.status ?? 0;
+    if (error && status > 0 && this.unconfirmed.delete(harEntryKey({ ...entry, response: { ...entry.response, _error: null } }))) return;
+    const identity = harEntryRequestIdentity(entry);
+    const inFlight = this.inFlightByIdentity.get(identity) ?? 0;
+    const waiting = [...this.unconfirmed].filter(([, pending]) => pending.identity === identity);
+    if (error && status === 0 && waiting.length > 0) {
+      const only = waiting.length === 1 && inFlight === 0 ? waiting[0] : undefined;
+      if (only) this.unconfirmed.delete(only[0]);
       return;
     }
-    const identity = harEntryRequestIdentity(entry);
-    const matches = [...this.unconfirmed].filter(([, pending]) => pending.identity === identity);
-    if (matches.length === 1 && matches[0]) this.unconfirmed.delete(matches[0][0]);
+    if (inFlight > 1) this.inFlightByIdentity.set(identity, inFlight - 1);
+    else this.inFlightByIdentity.delete(identity);
   }
 
   /** Emits the entry unless an identical request key was already emitted (live or polled). */
@@ -228,9 +246,14 @@ export class CaptureRelay {
   private reconcile(entries: readonly HarEntryLike[]): void {
     const listed = new Set<string>();
     const present = new Set<string>();
+    const inFlight = new Map<string, number>();
     for (const entry of entries) {
-      present.add(harEntryRequestIdentity(entry));
-      if (isHarEntryInFlight(entry)) continue;
+      const identity = harEntryRequestIdentity(entry);
+      present.add(identity);
+      if (isHarEntryInFlight(entry)) {
+        inFlight.set(identity, (inFlight.get(identity) ?? 0) + 1);
+        continue;
+      }
       const key = harEntryKey(entry);
       listed.add(key);
       if (this.seenKeys.has(key)) continue;
@@ -244,9 +267,10 @@ export class CaptureRelay {
       if (entry.response?._error || (earlier !== undefined && earlier.time === entry.time)) {
         if (this.emit(key, observation)) this.polledEntryCount += 1;
       } else {
-        this.unconfirmed.set(key, { observation, identity: harEntryRequestIdentity(entry), time: entry.time });
+        this.unconfirmed.set(key, { observation, identity, time: entry.time });
       }
     }
+    this.inFlightByIdentity = inFlight;
     for (const [key, pending] of this.unconfirmed) {
       if (listed.has(key)) continue;
       this.unconfirmed.delete(key);
@@ -290,6 +314,7 @@ export class CaptureRelay {
       this.buffer.length = 0;
       this.outbox.length = 0;
       this.unconfirmed.clear();
+      this.inFlightByIdentity.clear();
       return;
     }
     if (message.type !== 'hello') return;

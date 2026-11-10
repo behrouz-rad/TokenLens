@@ -134,13 +134,14 @@ textarea input (native paste or typing)
   cancellation), and Chrome then reports it under a different key (with `_error`, and for a
   cancellation with status and timings reset). Its earlier snapshot is discarded when the failure
   arrives through `onRequestFinished` (matched exactly when the failure kept its status,
-  connection and timings; for a cancellation only if a single held snapshot shares its start time,
-  method and URL) or while the log still lists a request with that start time, method and URL.
-  It is emitted only if the request left the log without either. Chrome exposes no request id, so
-  that identity cannot tell apart concurrent identical requests started in the same millisecond:
-  it is never used to merge requests, and when a cancellation could belong to either twin both
-  snapshots are kept. If the log is then cleared before the next poll, the cancelled twin's early
-  snapshot is emitted as well.
+  connection and timings; for a cancellation only if that snapshot is the one unfinished request
+  with its start time, method and URL that the relay knows of, with no twin awaiting confirmation
+  or listed in flight by the latest poll) or while the log still lists a request with that start
+  time, method and URL. It is emitted only if the request left the log without either. Chrome
+  exposes no request id, so that identity cannot tell apart concurrent identical requests started
+  in the same millisecond: it is never used to merge requests, and when a cancellation could
+  belong to either twin every snapshot is kept. If the log is then cleared before the next poll,
+  the cancelled twin's early snapshot is emitted as well.
 - DevTools recreates the extension panel frame on inspected-page navigation. The relay survives
   and the new panel resynchronises from the replay buffer.
 - Branded Google Chrome ignores `--load-extension`; automation uses Playwright's Chromium.

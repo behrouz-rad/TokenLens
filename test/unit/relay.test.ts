@@ -533,10 +533,74 @@ describe('CaptureRelay keeps one observation when a request fails after its resp
     // A cancellation resets status, connection and timings, so nothing ties it to either snapshot.
     await live(a.failed('net::ERR_ABORTED', 702.4));
     await navigate();
-    const durations = requestsOf(channel.sent).map((o) => o.durationMs);
-    expect(durations).toContain(702.4);
-    expect(durations).toContain(b.earlyTime);
-    expect(durations).toHaveLength(3);
+    // Both snapshots are kept, so the cancelled twin's early snapshot is the price of never losing the other.
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([
+      [0, 702.4],
+      [200, a.earlyTime],
+      [200, b.earlyTime],
+    ]);
+  });
+
+  it('keeps a pending twin when the cancelled one was still in flight in the last poll and the log is then cleared', async () => {
+    const { channel, poll, live, navigate } = await started();
+    const a = lifecycle('twin-in-flight', { blocked: 44.78 });
+    const b = lifecycle('twin-in-flight', { blocked: 58.11 });
+    await poll([a.early, b.inFlight]);
+    await live(b.failed('net::ERR_ABORTED', 702.4));
+    await navigate();
+    await poll([]);
+    expect(requestsOf(channel.sent).map((o) => [o.url.split('/').pop(), o.status, o.durationMs])).toEqual([
+      ['twin-in-flight', 0, 702.4],
+      ['twin-in-flight', 200, a.earlyTime],
+    ]);
+  });
+
+  it('keeps both twins when the in-flight one is cancelled and the pending one then completes live', async () => {
+    const { channel, poll, live, navigate } = await started();
+    const a = lifecycle('twin-in-flight-done', { blocked: 44.78 });
+    const b = lifecycle('twin-in-flight-done', { blocked: 58.11 });
+    await poll([a.early, b.inFlight]);
+    await live(b.failed('net::ERR_ABORTED', 702.4));
+    await live(a.final);
+    await navigate();
+    await poll([]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([
+      [0, 702.4],
+      [200, a.finalTime],
+    ]);
+  });
+
+  it('retires the pending snapshot once the in-flight twin has finished, so its later cancellation leaves no stale copy', async () => {
+    const { channel, poll, live, navigate } = await started();
+    const a = lifecycle('twin-settled', { blocked: 44.78 });
+    const b = lifecycle('twin-settled', { blocked: 58.11 });
+    await poll([a.early, b.inFlight]);
+    await live(b.final);
+    await live(a.failed('net::ERR_ABORTED', 913.7));
+    await navigate();
+    await poll([]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([
+      [200, b.finalTime],
+      [0, 913.7],
+    ]);
+  });
+
+  it('counts in-flight twins from the latest poll only', async () => {
+    const { channel, poll, live, navigate } = await started();
+    const a = lifecycle('twin-recounted', { blocked: 44.78 });
+    const b = lifecycle('twin-recounted', { blocked: 58.11 });
+    const bEnd = b.failed('net::ERR_CONNECTION_RESET', 120.5);
+    // A is still loading in the second poll (its duration changed), so it stays unconfirmed.
+    const aLoading = { ...a.early, time: a.earlyTime + 0.7, timings: { ...a.early.timings, receive: 2.59 } };
+    await poll([a.early, b.inFlight]);
+    await poll([aLoading, bEnd]);
+    await live(a.failed('net::ERR_ABORTED', 913.7));
+    await navigate();
+    await poll([]);
+    expect(requestsOf(channel.sent).map((o) => [o.status, o.durationMs])).toEqual([
+      [0, 120.5],
+      [0, 913.7],
+    ]);
   });
 
   it('still reports a pending request that leaves the log on navigation without any result of its own', async () => {
@@ -638,6 +702,21 @@ describe('CaptureRelay Clear', () => {
     fake.emitNavigation('https://app.example.test/next');
     await vi.advanceTimersByTimeAsync(100);
     await poll([]);
+    expect(requestsOf(channel.sent)).toEqual([]);
+  });
+
+  it('withholds a pending request and its in-flight twin across Clear, a live cancellation and a cleared log', async () => {
+    const { channel, fake, poll, live, clear } = await started();
+    const a = lifecycle('clear-twin', { blocked: 44.78 });
+    const b = lifecycle('clear-twin', { blocked: 58.11 });
+    await poll([a.early, b.inFlight]);
+    clear();
+    await live(b.failed('net::ERR_ABORTED', 2300));
+    fake.setHar([]);
+    fake.emitNavigation('https://app.example.test/next');
+    await vi.advanceTimersByTimeAsync(100);
+    await poll([]);
+    await live(a.final);
     expect(requestsOf(channel.sent)).toEqual([]);
   });
 
