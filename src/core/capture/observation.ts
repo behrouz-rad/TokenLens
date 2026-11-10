@@ -101,6 +101,19 @@ export function isHarEntryInFlight(entry: HarEntryLike): boolean {
   return (entry.response?.status ?? 0) === 0 && !entry.response?._error;
 }
 
+/**
+ * What stays the same in every getHAR() snapshot of one request: start time, method and URL. As a
+ * request moves from in flight to completed or failed, Chrome may change everything else (status,
+ * connection id, timings; a cancellation resets them) and it exposes no request id. Concurrent
+ * identical requests started in the same millisecond share this identity, so it cannot tell them
+ * apart and is never used to merge requests. The relay only asks whether a request with this
+ * identity is still in the log, which holds for such twins alike: Chrome removes log entries all
+ * at once, never one by one.
+ */
+export function harEntryRequestIdentity(entry: HarEntryLike): string {
+  return [entry.startedDateTime ?? '', entry.request?.method ?? '', entry.request?.url ?? ''].join('|');
+}
+
 /** Timing phases that are fixed once the response headers have arrived; `receive` is not. */
 const SETTLED_PHASES = ['blocked', '_blocked_queueing', 'dns', 'connect', 'ssl', 'send', 'wait'] as const;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractAuthorization, harEntryKey, harEntryToObservation, isHarEntryInFlight } from '@/core/capture/observation';
+import { extractAuthorization, harEntryKey, harEntryRequestIdentity, harEntryToObservation, isHarEntryInFlight } from '@/core/capture/observation';
 
 describe('extractAuthorization', () => {
   it('extracts Bearer tokens case-insensitively from header name and scheme', () => {
@@ -94,5 +94,20 @@ describe('isHarEntryInFlight', () => {
     expect(isHarEntryInFlight({ time: 702.9, request, response: { status: 0, _error: 'net::ERR_ABORTED' } })).toBe(false);
     expect(isHarEntryInFlight({ time: 82.9, request, response: { status: 200, _error: 'net::ERR_FAILED' } })).toBe(false);
     expect(isHarEntryInFlight({ time: 58.1, request, response: { status: 200, _error: null } })).toBe(false);
+  });
+});
+
+describe('harEntryRequestIdentity', () => {
+  it('stays the same through every snapshot of a request, and cannot tell same-millisecond twins apart', () => {
+    const request = { method: 'GET', url: 'https://api.example.test/stream' };
+    const inFlight = { startedDateTime: 't', time: 0, request, response: { status: 0, _error: null }, timings: { blocked: -129_855_013.88, wait: 0, receive: 0 } };
+    const early = { startedDateTime: 't', time: 59.4, _connectionId: '137', request, response: { status: 200, _error: null }, timings: { blocked: 44.78, wait: 12.65, receive: 1.89 } };
+    const dropped = { ...early, time: 939.3, response: { status: 200, _error: 'net::ERR_INCOMPLETE_CHUNKED_ENCODING' } };
+    const cancelled = { startedDateTime: 't', time: 913.7, request, response: { status: 0, _error: 'net::ERR_ABORTED' }, timings: { blocked: 913.68, wait: 0, receive: 0 } };
+    const identities = new Set([inFlight, early, dropped, cancelled].map(harEntryRequestIdentity));
+    expect(identities.size).toBe(1);
+    expect(harEntryKey(dropped)).not.toBe(harEntryKey(early));
+    expect(harEntryRequestIdentity({ ...early, timings: { blocked: 58.11, wait: 16.69, receive: 0.85 } })).toBe(harEntryRequestIdentity(early));
+    expect(harEntryRequestIdentity({ ...early, startedDateTime: 'u' })).not.toBe(harEntryRequestIdentity(early));
   });
 });

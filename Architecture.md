@@ -70,7 +70,10 @@ textarea input (native paste or typing)
   their `requestIds`; events are filed per token. `verifyReferentialIntegrity` checks all of this.
 - **Idempotent delivery.** Every observation carries `(relayId, seq)`. The session keeps the highest
   processed `seq` per relay, so replays (panel reload, StrictMode) never duplicate. Clearing keeps
-  the cursor and also tells the relay to drop its replay buffer (`clear` message).
+  the cursor and also tells the relay to drop its replay buffer (`clear` message). From then on
+  the relay withholds every request that started before the Clear, however it is reported later:
+  awaiting confirmation, still in flight, in a `getHAR()` answer that overlapped the Clear, or
+  delivered live.
 - **Recording.** Paused observations are counted as skipped and never backfilled.
 - **Navigation.** Data is preserved across navigations by default; the *Clear on navigation*
   setting resets the session when the relay reports `onNavigated`.
@@ -127,7 +130,18 @@ textarea input (native paste or typing)
   requests by their settled timing phases instead of `time`, and emits a completed entry first
   seen in a poll once `onRequestFinished` delivers it or the next poll reports it unchanged.
   Each request is therefore emitted once, with its final values; one seen only through polling
-  appears one poll later.
+  appears one poll later. A request can still fail after that first sighting (dropped connection,
+  cancellation), and Chrome then reports it under a different key (with `_error`, and for a
+  cancellation with status and timings reset). Its earlier snapshot is discarded when the failure
+  arrives through `onRequestFinished` (matched exactly when the failure kept its status,
+  connection and timings; for a cancellation only if that snapshot is the one unfinished request
+  with its start time, method and URL that the relay knows of, with no twin awaiting confirmation
+  or listed in flight by the latest poll) or while the log still lists a request with that start
+  time, method and URL. It is emitted only if the request left the log without either. Chrome
+  exposes no request id, so that identity cannot tell apart concurrent identical requests started
+  in the same millisecond: it is never used to merge requests, and when a cancellation could
+  belong to either twin every snapshot is kept. If the log is then cleared before the next poll,
+  the cancelled twin's early snapshot is emitted as well.
 - DevTools recreates the extension panel frame on inspected-page navigation. The relay survives
   and the new panel resynchronises from the replay buffer.
 - Branded Google Chrome ignores `--load-extension`; automation uses Playwright's Chromium.
